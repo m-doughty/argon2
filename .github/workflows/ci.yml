@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# The toolchain is pinned: GNAT and GNATprove 16.1.0 are the releases with
+# builds for every platform below.
+env:
+  ALIRE_VERSION: "2.1.1"
+  TOOLCHAIN: "gnat_native=16.1.0 gprbuild=26.0.1"
+
+jobs:
+  gates:
+    name: sources, dependency and test vectors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: BLAKE2b is the index release 0.1.1, unpinned
+        run: bash scripts/check-dependency.sh
+      - name: Source gate self-test
+        run: bash scripts/check-sources.sh --self-test
+      - name: No proof escape hatches in the sources
+        run: bash scripts/check-sources.sh
+      - name: H0 test vectors are current (CPython hashlib)
+        run: python3 scripts/h0-vectors.py --check
+      - name: Proof-judge self-test
+        run: python3 -I scripts/spark-proof.py selftest
+
+  test:
+    name: test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64,   os: ubuntu-24.04 }
+          - { name: linux-aarch64,  os: ubuntu-24.04-arm }
+          # GNAT 16's fixed headers require the newer Command Line Tools SDK.
+          - { name: macos-arm64,    os: macos-15 }
+          - { name: windows-x86_64, os: windows-2022 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: alire-project/setup-alire@v4
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: ${{ env.TOOLCHAIN }}
+      - name: Build with checks and contracts
+        shell: bash
+        working-directory: tests
+        run: alr -n build --validation --profiles=argon2id=validation
+      - name: H-prime and H0 tests
+        shell: bash
+        working-directory: tests
+        run: ./bin/test_main
+      # Inputs up to 2**32 - 1 bytes through the proved H0 code, against the
+      # C reference regenerating the same bytes; allocates up to 4 GiB.
+      - name: H0 long inputs against the C reference
+        shell: bash
+        working-directory: tests
+        run: ./bin/test_main --long
+      # The compiled H0 code holds no trace of the proof, the secondary stack
+      # or abort deferral (see the script's header). The validation objects
+      # come from the build above; the release build below replaces the test
+      # binary, so this step runs last.
+      - name: H0 object code carries no proof residue
+        shell: bash
+        run: |
+          (cd tests && alr -n build)
+          alr -C tests -n exec -- bash ../scripts/check-h0-object.sh
+
+  prove:
+    name: prove (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64,   os: ubuntu-24.04 }
+          - { name: linux-aarch64,  os: ubuntu-24.04-arm }
+          - { name: macos-arm64,    os: macos-15 }
+          - { name: windows-x86_64, os: windows-2022 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: alire-project/setup-alire@v4
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: ${{ env.TOOLCHAIN }}
+      - name: Generate Alire configuration and build proof dependencies
+        shell: bash
+        working-directory: tests
+        run: alr -n build --validation --profiles=argon2id=validation
+      # Provers are bounded by steps, not time (see argon2id.gpr), so the
+      # result is the same on every machine.
+      - name: GNATprove (all checks proved, or the job fails)
+        shell: bash
+        working-directory: tests
+        run: alr -n exec -- gnatprove -P ../argon2id.gpr -j0

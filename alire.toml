@@ -1,0 +1,23 @@
+name = "argon2id"
+description = "Argon2 H-prime and the H0 pre-hashing digest in SPARK; early Argon2id"
+version = "0.1.0-dev"
+
+authors = ["Matt Doughty"]
+maintainers = ["Matt Doughty <matt@apogee.guru>"]
+maintainers-logins = ["m-doughty"]
+licenses = "BSD-3-Clause"
+tags = ["spark", "argon2", "argon2id", "hash", "crypto", "proof"]
+
+[[depends-on]]
+blake2b = "=0.1.1"
+gnat = ">=16"
+
+[build-switches]
+"*".ada_version = "Ada2022"
+release.optimization = "Performance"
+# Retain run-time checks while this milestone's proof is being established.
+release.runtime_checks = "Everything"
+release.contracts = "Yes"
+validation.runtime_checks = "Everything"
+validation.contracts = "Yes"
+validation.compile_checks = "Errors"
