@@ -1,0 +1,32 @@
+with "config/argon2_tests_config.gpr";
+with "argon2.gpr";
+
+project Argon2_Tests is
+
+   for Languages use ("Ada", "C");
+   for Source_Dirs use ("src/", "ref/", "ref/blake2/", "config/");
+   --  ref/ref.c is included by ref/compress_oracle.c, never compiled alone.
+   for Excluded_Source_Files use ("ref.c");
+   for Create_Missing_Dirs use "True";
+   for Object_Dir use "obj/" & Argon2_Tests_Config.Build_Profile;
+   for Exec_Dir use "bin/";
+   for Main use ("test_main.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use
+        Argon2_Tests_Config.Ada_Compiler_Switches &
+        ("-gnatW8", "-gnatwa", "-gnatw.X", "-gnatwe", "-gnata");
+      for Default_Switches ("C") use
+        ("-O3", "-std=c11", "-Wall", "-Wextra", "-DARGON2_NO_THREADS");
+      --  Upstream core.c compares unsigned values with limits of 0 and
+      --  with constants wider than the field; the file is unmodified.
+      for Switches ("core.c") use
+        ("-O3", "-std=c11", "-Wall", "-Wextra", "-Wno-type-limits",
+         "-DARGON2_NO_THREADS");
+   end Compiler;
+
+   package Binder is
+      for Switches ("Ada") use ("-Es"); --  Symbolic traceback
+   end Binder;
+
+end Argon2_Tests;

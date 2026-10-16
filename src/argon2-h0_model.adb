@@ -6,7 +6,7 @@ with Blake2b.Streaming.Consistency;
 --  The proofs of the H0 model. Static ghost code: proved by GNATprove,
 --  never compiled.
 
-package body Argon2id.H0_Model
+package body Argon2.H0_Model
   with SPARK_Mode
 is
 
@@ -554,4 +554,4 @@ is
             Blake2b.No_Bytes, 64));
    end Lemma_H0_Spec_Hash;
 
-end Argon2id.H0_Model;
+end Argon2.H0_Model;

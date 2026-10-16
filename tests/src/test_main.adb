@@ -1,5 +1,6 @@
---  H-prime comparisons against the official Argon2 C reference, and the
---  H0 tests (H0_Tests).
+--  H-prime comparisons against the official Argon2 C reference, the
+--  H-prime vector and large-output tests (H_Prime_Tests), the H0 tests
+--  (H0_Tests) and the block-compression oracle checks (Compression_Tests).
 --
 --  Usage: test_main          the default run
 --         test_main --long   only the long H0 test (2**34 + 36 bytes,
@@ -16,14 +17,19 @@ with Interfaces;
 with Interfaces.C;
 with System;
 
-with Argon2id; use Argon2id;
-with Argon2id.H_Prime;
+with Argon2; use Argon2;
+with Argon2.H_Prime;
+with Blake2b;
+with Blake2b.Hashing;
+with Compression_Tests;
 with H0_Tests;
+with H_Prime_Tests;
 
 procedure Test_Main is
    use type Interfaces.Unsigned_8;
    use type Interfaces.Unsigned_32;
    use type Interfaces.C.int;
+   use type Blake2b.I64;
 
    pragma Compile_Time_Error
      (Byte_Index'Last - Byte_Index'First + 1 /= 2 ** 32 - 1,
@@ -38,7 +44,7 @@ procedure Test_Main is
 
    type Length_List is array (Positive range <>) of Natural;
    Input_Lengths : constant Length_List :=
-     [0, 1, 127, 128, 129, 4_095, 4_096, 4_097, 8_193];
+     [0, 1, 72, 127, 128, 129, 1_023, 1_024];
    Output_Lengths : constant Length_List :=
      [1, 4, 31, 32, 33, 63, 64, 65, 66, 95, 96, 97,
       127, 128, 129, 1_023, 1_024, 1_025];
@@ -63,7 +69,8 @@ procedure Test_Main is
       return Seed;
    end Next_Random;
 
-   procedure Reference_Hash (Input : Byte_Array; Digest : out Byte_Array) is
+   procedure Reference_Hash
+     (Input : Blake2b.Byte_Array; Digest : out Byte_Array) is
       Status : Interfaces.C.int;
    begin
       Digest := [others => 0];
@@ -78,14 +85,25 @@ procedure Test_Main is
       end if;
    end Reference_Hash;
 
+   --  H' with its scratch (hash state and two chain values) supplied here,
+   --  as a caller of the library would.
+   procedure Run_H_Prime
+     (Input : Blake2b.Byte_Array; Digest : out Byte_Array)
+   is
+      S : Blake2b.Hashing.State;
+      V, Next_V : Argon2.H_Prime.Chain := [others => 0];
+   begin
+      Argon2.H_Prime.Hash (Input, Digest, S, V, Next_V);
+   end Run_H_Prime;
+
    procedure Compare
      (Input_Length  : Natural;
       Output_Length : Positive;
-      Input_First   : Byte_Index;
+      Input_First   : Blake2b.Index;
       Output_First  : Byte_Index)
    is
-      Input : Byte_Array
-        (Input_First .. Input_First + Byte_Index (Input_Length) - 1);
+      Input : Blake2b.Byte_Array
+        (Input_First .. Input_First + Blake2b.I64 (Input_Length) - 1);
       Actual : Byte_Array
         (Output_First .. Output_First + Byte_Index (Output_Length) - 1) :=
           [others => 16#A5#];
@@ -95,7 +113,7 @@ procedure Test_Main is
          Input (I) := Byte (Next_Random / 2 ** 24);
       end loop;
       Reference_Hash (Input, Expected);
-      Argon2id.H_Prime.Hash (Input, Actual);
+      Run_H_Prime (Input, Actual);
       Check
         (Actual = Expected,
          "input" & Input_Length'Image & " output" & Output_Length'Image &
@@ -107,25 +125,25 @@ procedure Test_Main is
                 Ada.Exceptions.Exception_Information (E));
    end Compare;
 
-   procedure Chunk_Order is
-      Input : Byte_Array (0 .. 8_192);
+   procedure Input_Order is
+      Input : Blake2b.Byte_Array (0 .. 1_023);
       Actual : Byte_Array (0 .. 1_023);
       Expected : Byte_Array (0 .. 1_023);
    begin
       for I in Input'Range loop
-         Input (I) := (if I < 4_096 then 16#11#
-                       elsif I < 8_192 then 16#A3# else 16#5B#);
+         Input (I) := (if I < 512 then 16#11#
+                       elsif I < 1_023 then 16#A3# else 16#5B#);
       end loop;
       Reference_Hash (Input, Expected);
-      Argon2id.H_Prime.Hash (Input, Actual);
-      Check (Actual = Expected, "distinct chunks preserve order and tail");
-   end Chunk_Order;
+      Run_H_Prime (Input, Actual);
+      Check (Actual = Expected, "distinct regions preserve order and tail");
+   end Input_Order;
 
    procedure Empty_Output_Rejected is
-      Input : constant Byte_Array := [1, 2, 3];
+      Input : constant Blake2b.Byte_Array := [1, 2, 3];
       Empty : Byte_Array (Byte_Index'Last .. Byte_Index'Last - 1);
    begin
-      Argon2id.H_Prime.Hash (Input, Empty);
+      Run_H_Prime (Input, Empty);
       Check (False, "empty output must reject the precondition");
    exception
       when Ada.Assertions.Assertion_Error =>
@@ -135,13 +153,27 @@ procedure Test_Main is
                 Ada.Exceptions.Exception_Information (E));
    end Empty_Output_Rejected;
 
+   procedure Oversized_Input_Rejected is
+      Input : constant Blake2b.Byte_Array (0 .. 1_024) := [others => 7];
+      Output : Byte_Array (0 .. 31);
+   begin
+      Run_H_Prime (Input, Output);
+      Check (False, "input over 1,024 bytes must reject the precondition");
+   exception
+      when Ada.Assertions.Assertion_Error =>
+         Check (True, "input over 1,024 bytes rejected");
+      when E : others =>
+         Check (False, "wrong oversized-input exception: " &
+                Ada.Exceptions.Exception_Information (E));
+   end Oversized_Input_Rejected;
+
    procedure Output_Guards is
-      Input : constant Byte_Array (17 .. 19) := [1, 2, 3];
+      Input : constant Blake2b.Byte_Array (17 .. 19) := [1, 2, 3];
       Buffer : Byte_Array (0 .. 1_025) := [others => 16#A5#];
       Expected : Byte_Array (0 .. 1_023);
    begin
       Reference_Hash (Input, Expected);
-      Argon2id.H_Prime.Hash (Input, Buffer (1 .. 1_024));
+      Run_H_Prime (Input, Buffer (1 .. 1_024));
       Check (Buffer (1 .. 1_024) = Expected, "output slice matches reference");
       Check (Buffer (0) = 16#A5# and then Buffer (1_025) = 16#A5#,
              "output slice preserves both guard bytes");
@@ -171,18 +203,18 @@ begin
          Compare (Input_Length, Output_Length, 17, 23);
          Compare
            (Input_Length, Output_Length,
-            (if Input_Length = 0 then Byte_Index'Last
-             else Byte_Index'Last - Byte_Index (Input_Length) + 1),
+            (if Input_Length = 0 then Blake2b.Index'Last
+             else Blake2b.Index'Last - Blake2b.I64 (Input_Length) + 1),
             Byte_Index'Last - Byte_Index (Output_Length) + 1);
       end loop;
    end loop;
 
    --  Null input at the highest legal lower bound.
-   Compare (0, 65, Byte_Index'Last, Byte_Index'Last - 64);
+   Compare (0, 65, Blake2b.Index'Last, Byte_Index'Last - 64);
    for I in 1 .. 200 loop
       declare
          Input_Length : constant Natural :=
-           Natural (Next_Random mod 9_001);
+           Natural (Next_Random mod 1_025);
          Output_Length : constant Positive :=
            Positive (Next_Random mod 1_100 + 1);
       begin
@@ -190,12 +222,19 @@ begin
       end;
    end loop;
 
-   Chunk_Order;
+   Input_Order;
    Empty_Output_Rejected;
+   Oversized_Input_Rejected;
    Output_Guards;
    H0_Tests.Run;
    Passed := Passed + H0_Tests.Passed;
    Failed := Failed + H0_Tests.Failed;
+   H_Prime_Tests.Run;
+   Passed := Passed + H_Prime_Tests.Passed;
+   Failed := Failed + H_Prime_Tests.Failed;
+   Compression_Tests.Run;
+   Passed := Passed + Compression_Tests.Passed;
+   Failed := Failed + Compression_Tests.Failed;
    Put_Line (Passed'Image & " passed," & Failed'Image & " failed");
    Ada.Command_Line.Set_Exit_Status
      (if Failed = 0 then Ada.Command_Line.Success

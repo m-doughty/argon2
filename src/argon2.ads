@@ -3,7 +3,7 @@
 
 with Interfaces;
 
-package Argon2id
+package Argon2
   with SPARK_Mode, Pure
 is
    subtype Byte is Interfaces.Unsigned_8;
@@ -12,4 +12,4 @@ is
    --  represents lengths and one-past-end offsets without overflow.
    subtype Byte_Index is Long_Long_Integer range 0 .. 2**32 - 2;
    type Byte_Array is array (Byte_Index range <>) of Byte;
-end Argon2id;
+end Argon2;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mutation suite for H0 (Argon2id.H0 and Argon2id.H0_Model): shows that
+# Mutation suite for H0 (Argon2.H0 and Argon2.H0_Model): shows that
 # the proof and the tests each catch the mistakes they are supposed to
 # catch. Adapted from the blake2b crate's scripts/mutants.sh.
 #
@@ -8,7 +8,7 @@
 # toolchain or a missing prover would look like a caught mutant. The
 # baseline also proves both H0 units once with each prover alone, and
 # every check must cost at most STEP_MARGIN steps (5000, half the units'
-# 10000-step budget in argon2id.gpr; not configurable) with its cheapest
+# 10000-step budget in argon2.gpr; not configurable) with its cheapest
 # prover (scripts/spark-proof.py margin), so a check a mutant fails proved
 # in the baseline with at least half its budget to spare; and every check
 # must be proved by at least two of the provers each on its own
@@ -93,7 +93,7 @@ LOGS="$WORK/logs"
 SPARK_PROOF="$ROOT/scripts/spark-proof.py"
 PYTHON=${PYTHON:-python3}
 PROVERS="z3 cvc5 altergo"
-UNITS="argon2id-h0_model.adb argon2id-h0.adb"
+UNITS="argon2-h0_model.adb argon2-h0.adb"
 
 # name | file | exact text | replacement | unit to prove | must catch |
 #   expected unproved checks (FILE:LINE:RULE, comma-separated, as the
@@ -103,34 +103,34 @@ UNITS="argon2id-h0_model.adb argon2id-h0.adb"
 # unit, the layers and the expected checks are those of its first entry.
 # In the text and its replacement, \n stands for a line break.
 MUTANTS=(
-  "field-order|src/argon2id-h0.adb|        when 1 => Pr.Tag_Length,\n        when 2 => Pr.Memory,|        when 1 => Pr.Memory,\n        when 2 => Pr.Tag_Length,|argon2id-h0.adb|PT|argon2id-h0.adb:428:VC_ASSERT"
-  "field-byte-order|src/argon2id-h0.adb|        Post   => Bytes (0) = Byte (Value mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (3) = Byte (Value / 2**24);|        Post   => Bytes (3) = Byte (Value mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (0) = Byte (Value / 2**24);|argon2id-h0.adb|PT|argon2id-h0.adb:433:VC_ASSERT"
-  "field-byte-order|src/argon2id-h0.adb|        [Byte (Value mod 2**8), Byte ((Value / 2**8) mod 2**8),\n         Byte ((Value / 2**16) mod 2**8), Byte (Value / 2**24)];|        [Byte (Value / 2**24), Byte ((Value / 2**16) mod 2**8),\n         Byte ((Value / 2**8) mod 2**8), Byte (Value mod 2**8)];|||"
-  "len-p-omitted|src/argon2id-h0.adb|         Absorb_Field (St, Pr, Password, Salt, Secret, Associated_Data, Id);\n|         if Id /= 6 then\n            Absorb_Field\n              (St, Pr, Password, Salt, Secret, Associated_Data, Id);\n         end if;\n|argon2id-h0.adb|PT|argon2id-h0.adb:578:VC_PRECONDITION"
-  "dropped-final-chunk|src/argon2id-h0.adb|      while Offset < Total loop|      while Total - Offset > Chunk_Bytes loop|argon2id-h0.adb|PT|argon2id-h0.adb:504:VC_ASSERT"
-  "rounded-m|src/argon2id-h0.adb|        when 2 => Pr.Memory,|        when 2 =>\n          (if 4 * Pr.Parallelism = 0 then Pr.Memory\n           else 4 * Pr.Parallelism * (Pr.Memory / (4 * Pr.Parallelism))),|argon2id-h0.adb|PT|argon2id-h0.adb:430:VC_ASSERT"
-  "copy-input-swap|src/argon2id-h0.adb|         when 10 => Copy_Chunk (P, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (S, Offset, Chunk (0 .. Last));|         when 10 => Copy_Chunk (S, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (P, Offset, Chunk (0 .. Last));|argon2id-h0.adb|PT|argon2id-h0.adb:245:VC_POSTCONDITION"
-  "client-no-bridge|src/argon2id-h0.adb|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (0 .. Last));|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (1 .. 0));|argon2id-h0.adb|P|argon2id-h0.adb:465:VC_PRECONDITION"
-  "model-m-prime|src/argon2id-h0_model.ads|     ([0 => Parallelism, 1 => Tag_Length, 2 => Memory, 3 => Passes,|     ([0 => Parallelism, 1 => Tag_Length,\n       2 => (if 4 * Parallelism = 0 then Memory\n             else 4 * Parallelism * (Memory / (4 * Parallelism))),\n       3 => Passes,|argon2id-h0.adb|P|argon2id-h0.adb:428:VC_ASSERT"
-  "model-m-prime|src/argon2id-h0_model.ads|                              Kind, P, S, K, X) (2) = Memory|                              Kind, P, S, K, X) (2)\n                   = (if 4 * Parallelism = 0 then Memory\n                      else 4 * Parallelism\n                           * (Memory / (4 * Parallelism)))|||"
-  "model-le-byte-order|src/argon2id-h0_model.ads|        when 0      => Byte (Field mod 2**8),\n        when 1      => Byte ((Field / 2**8) mod 2**8),\n        when 2      => Byte ((Field / 2**16) mod 2**8),\n        when others => Byte (Field / 2**24))|        when 0      => Byte (Field / 2**24),\n        when 1      => Byte ((Field / 2**16) mod 2**8),\n        when 2      => Byte ((Field / 2**8) mod 2**8),\n        when others => Byte (Field mod 2**8))|argon2id-h0.adb|P|argon2id-h0.adb:433:VC_ASSERT"
-  "model-schedule-swap|src/argon2id-h0_model.ads|       8  => (Source => 10, Start => 0, Count => L (10), First => 28),|       8  => (Source => 11, Start => 0, Count => L (10), First => 28),|argon2id-h0_model.adb|P|argon2id-h0_model.ads:163:VC_POSTCONDITION"
-  "model-schedule-swap|src/argon2id-h0_model.ads|       10 => (Source => 11, Start => 0, Count => L (11),|       10 => (Source => 10, Start => 0, Count => L (11),|||"
-  "model-formula-field|src/argon2id-h0_model.ads|      elsif Pos < 28 then LE_Byte (F (6), Pos - 24)|      elsif Pos < 28 then LE_Byte (F (7), Pos - 24)|argon2id-h0_model.adb|P|argon2id-h0_model.adb:112:VC_ASSERT"
-  "model-length|src/argon2id-h0_model.ads|     (40 + L (10) + L (11) + L (12) + L (13))|     (41 + L (10) + L (11) + L (12) + L (13))|argon2id-h0_model.adb|P|argon2id-h0_model.ads:117:VC_POSTCONDITION"
+  "field-order|src/argon2-h0.adb|        when 1 => Pr.Tag_Length,\n        when 2 => Pr.Memory,|        when 1 => Pr.Memory,\n        when 2 => Pr.Tag_Length,|argon2-h0.adb|PT|argon2-h0.adb:428:VC_ASSERT"
+  "field-byte-order|src/argon2-h0.adb|        Post   => Bytes (0) = Byte (Value mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (3) = Byte (Value / 2**24);|        Post   => Bytes (3) = Byte (Value mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (0) = Byte (Value / 2**24);|argon2-h0.adb|PT|argon2-h0.adb:433:VC_ASSERT"
+  "field-byte-order|src/argon2-h0.adb|        [Byte (Value mod 2**8), Byte ((Value / 2**8) mod 2**8),\n         Byte ((Value / 2**16) mod 2**8), Byte (Value / 2**24)];|        [Byte (Value / 2**24), Byte ((Value / 2**16) mod 2**8),\n         Byte ((Value / 2**8) mod 2**8), Byte (Value mod 2**8)];|||"
+  "len-p-omitted|src/argon2-h0.adb|         Absorb_Field (St, Pr, Password, Salt, Secret, Associated_Data, Id);\n|         if Id /= 6 then\n            Absorb_Field\n              (St, Pr, Password, Salt, Secret, Associated_Data, Id);\n         end if;\n|argon2-h0.adb|PT|argon2-h0.adb:578:VC_PRECONDITION"
+  "dropped-final-chunk|src/argon2-h0.adb|      while Offset < Total loop|      while Total - Offset > Chunk_Bytes loop|argon2-h0.adb|PT|argon2-h0.adb:504:VC_ASSERT"
+  "rounded-m|src/argon2-h0.adb|        when 2 => Pr.Memory,|        when 2 =>\n          (if 4 * Pr.Parallelism = 0 then Pr.Memory\n           else 4 * Pr.Parallelism * (Pr.Memory / (4 * Pr.Parallelism))),|argon2-h0.adb|PT|argon2-h0.adb:430:VC_ASSERT"
+  "copy-input-swap|src/argon2-h0.adb|         when 10 => Copy_Chunk (P, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (S, Offset, Chunk (0 .. Last));|         when 10 => Copy_Chunk (S, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (P, Offset, Chunk (0 .. Last));|argon2-h0.adb|PT|argon2-h0.adb:245:VC_POSTCONDITION"
+  "client-no-bridge|src/argon2-h0.adb|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (0 .. Last));|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (1 .. 0));|argon2-h0.adb|P|argon2-h0.adb:465:VC_PRECONDITION"
+  "model-m-prime|src/argon2-h0_model.ads|     ([0 => Parallelism, 1 => Tag_Length, 2 => Memory, 3 => Passes,|     ([0 => Parallelism, 1 => Tag_Length,\n       2 => (if 4 * Parallelism = 0 then Memory\n             else 4 * Parallelism * (Memory / (4 * Parallelism))),\n       3 => Passes,|argon2-h0.adb|P|argon2-h0.adb:428:VC_ASSERT"
+  "model-m-prime|src/argon2-h0_model.ads|                              Kind, P, S, K, X) (2) = Memory|                              Kind, P, S, K, X) (2)\n                   = (if 4 * Parallelism = 0 then Memory\n                      else 4 * Parallelism\n                           * (Memory / (4 * Parallelism)))|||"
+  "model-le-byte-order|src/argon2-h0_model.ads|        when 0      => Byte (Field mod 2**8),\n        when 1      => Byte ((Field / 2**8) mod 2**8),\n        when 2      => Byte ((Field / 2**16) mod 2**8),\n        when others => Byte (Field / 2**24))|        when 0      => Byte (Field / 2**24),\n        when 1      => Byte ((Field / 2**16) mod 2**8),\n        when 2      => Byte ((Field / 2**8) mod 2**8),\n        when others => Byte (Field mod 2**8))|argon2-h0.adb|P|argon2-h0.adb:433:VC_ASSERT"
+  "model-schedule-swap|src/argon2-h0_model.ads|       8  => (Source => 10, Start => 0, Count => L (10), First => 28),|       8  => (Source => 11, Start => 0, Count => L (10), First => 28),|argon2-h0_model.adb|P|argon2-h0_model.ads:163:VC_POSTCONDITION"
+  "model-schedule-swap|src/argon2-h0_model.ads|       10 => (Source => 11, Start => 0, Count => L (11),|       10 => (Source => 10, Start => 0, Count => L (11),|||"
+  "model-formula-field|src/argon2-h0_model.ads|      elsif Pos < 28 then LE_Byte (F (6), Pos - 24)|      elsif Pos < 28 then LE_Byte (F (7), Pos - 24)|argon2-h0_model.adb|P|argon2-h0_model.adb:112:VC_ASSERT"
+  "model-length|src/argon2-h0_model.ads|     (40 + L (10) + L (11) + L (12) + L (13))|     (41 + L (10) + L (11) + L (12) + L (13))|argon2-h0_model.adb|P|argon2-h0_model.ads:117:VC_POSTCONDITION"
 )
 
 copy_crate () {
   local dest=$1
   rm -rf "$dest"
   mkdir -p "$dest/tests"
-  cp -R "$ROOT/src" "$ROOT/scripts" "$ROOT/alire.toml" "$ROOT/argon2id.gpr" \
+  cp -R "$ROOT/src" "$ROOT/scripts" "$ROOT/alire.toml" "$ROOT/argon2.gpr" \
         "$dest/"
   # Alire's state, with the pinned dependency already deployed, so that a
   # copy builds without the network.
   [ ! -d "$ROOT/alire" ] || cp -R "$ROOT/alire" "$dest/"
   cp -R "$ROOT/tests/src" "$ROOT/tests/ref" "$ROOT/tests/alire.toml" \
-        "$ROOT/tests/argon2id_tests.gpr" "$dest/tests/"
+        "$ROOT/tests/argon2_tests.gpr" "$dest/tests/"
   [ ! -d "$ROOT/tests/alire" ] || cp -R "$ROOT/tests/alire" "$dest/tests/"
 }
 
@@ -157,13 +157,13 @@ mutate () {
 
 build () {        # $1 = crate copy, $2 = log
   (cd "$1/tests" \
-     && "$ALR" -n build --validation --profiles=argon2id=validation) \
+     && "$ALR" -n build --validation --profiles=argon2=validation) \
     > "$2" 2>&1
 }
 
 prove () {        # $1 = crate copy, $2 = unit, $3 = log
   (cd "$1/tests" && "$ALR" -n exec -- gnatprove \
-     -P ../argon2id.gpr -j"$PROVE_JOBS" -u "$2" \
+     -P ../argon2.gpr -j"$PROVE_JOBS" -u "$2" \
      --timeout="$MUTANT_TIMEOUT") > "$3" 2>&1
 }
 
@@ -173,7 +173,7 @@ prove () {        # $1 = crate copy, $2 = unit, $3 = log
 prove_alone () {
   rm -rf "$1"/obj/*/gnatprove
   (cd "$1/tests" && "$ALR" -n exec -- gnatprove \
-     -P ../argon2id.gpr -j"$PROVE_JOBS" -u "$2" --prover="$3" \
+     -P ../argon2.gpr -j"$PROVE_JOBS" -u "$2" --prover="$3" \
      --timeout="$MUTANT_TIMEOUT") > "$4" 2>&1 || true
 }
 

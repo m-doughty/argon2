@@ -9,21 +9,20 @@ pragma Assertion_Level (Executable);
 
 with Ada.Numerics.Big_Numbers.Big_Integers;
 
-with Blake2b.Hashing;
 with Blake2b.Spec.Incremental;
 with Blake2b.Streaming;
 with Blake2b.Streaming.Example;
 with Blake2b.Streaming.Theory;
-with Argon2id.Wipe;
+with Argon2.Wipe;
 
-package body Argon2id.H0
+package body Argon2.H0
   with SPARK_Mode
 is
    use Ada.Numerics.Big_Numbers.Big_Integers;
    use Blake2b.Hashing;
    use Blake2b.Streaming;
    use Blake2b.Streaming.Theory;
-   use Argon2id.H0_Model;
+   use Argon2.H0_Model;
    use type Blake2b.I64;
    use type Blake2b.Byte;
    use type Interfaces.Unsigned_32;
@@ -444,7 +443,7 @@ is
         (St, Blake2b.No_Bytes, Field_First (P, S, K, X, Id), 4);
       Update (St, Bytes);
       Lemma_Same_Context (Model (St), Inc.Update (Before, Bytes));
-      Argon2id.Wipe.Bytes (Bytes);
+      Argon2.Wipe.Bytes (Bytes);
       pragma Assert (for all I in Bytes'Range => Bytes (I) = 0);
    end Absorb_Field;
 
@@ -502,7 +501,7 @@ is
          end;
       end loop;
       pragma Assert (Static => I64 (Offset) = Lengths_Of (P, S, K, X) (Id));
-      Argon2id.Wipe.Bytes (Chunk);
+      Argon2.Wipe.Bytes (Chunk);
       pragma Assert (for all I in Chunk'Range => Chunk (I) = 0);
    end Absorb_Input;
 
@@ -541,21 +540,21 @@ is
      (Password, Salt, Secret, Associated_Data : Byte_Array;
       Parallelism, Tag_Length, Memory, Passes, Version, Kind :
         Interfaces.Unsigned_32;
-      Digest : out Blake2b.Byte_Array)
+      Digest : out Blake2b.Byte_Array;
+      Hash_State : out Blake2b.Hashing.State)
    is
       Pr : constant Parameters :=
         (Parallelism => Parallelism, Tag_Length => Tag_Length,
          Memory => Memory, Passes => Passes, Version => Version,
          Kind => Kind);
-      St : State;
    begin
-      Init (St, 64, Blake2b.No_Bytes);
+      Init (Hash_State, 64, Blake2b.No_Bytes);
       Lemma_Init
         (Blake2b.No_Bytes,
          Call_C (Pr, Password, Salt, Secret, Associated_Data),
          Call_Pieces (Password, Salt, Secret, Associated_Data),
          Call_Length (Password, Salt, Secret, Associated_Data), 64);
-      Lemma_Same_Context (Model (St), Inc.Init (Blake2b.No_Bytes, 64));
+      Lemma_Same_Context (Model (Hash_State), Inc.Init (Blake2b.No_Bytes, 64));
       Lemma_Same_Context
         (Prefix (Pr, Password, Salt, Secret, Associated_Data, 0),
          Inc.Init (Blake2b.No_Bytes, 64));
@@ -563,25 +562,24 @@ is
       --  field (6 .. 9) followed by its input (10 .. 13).
       for Id in Field_Number loop
          pragma Loop_Invariant
-           (Is_Absorbing (St) and then Output_Length (St) = 64);
+           (Is_Absorbing (Hash_State)
+            and then Output_Length (Hash_State) = 64);
          pragma Loop_Invariant
            (Static =>
               In_Progress
-                (St, Pr, Password, Salt, Secret, Associated_Data,
+                (Hash_State, Pr, Password, Salt, Secret, Associated_Data,
                  Field_First (Password, Salt, Secret, Associated_Data, Id)));
          Lemma_Next (Password, Salt, Secret, Associated_Data, Id);
-         Absorb_Field (St, Pr, Password, Salt, Secret, Associated_Data, Id);
+         Absorb_Field
+           (Hash_State, Pr, Password, Salt, Secret, Associated_Data, Id);
          if Id >= 6 then
             Absorb_Input
-              (St, Pr, Password, Salt, Secret, Associated_Data, Id + 4);
+              (Hash_State, Pr, Password, Salt, Secret, Associated_Data,
+               Id + 4);
          end if;
       end loop;
-      pragma Warnings
-        (GNATprove, Off, """St"" is set by ""Finish"" but not used*",
-         Reason => "the state is finalized and wiped; only Digest is used");
-      Finish (St, Pr, Password, Salt, Secret, Associated_Data, Digest);
-      pragma Warnings
-        (GNATprove, On, """St"" is set by ""Finish"" but not used*");
+      Finish
+        (Hash_State, Pr, Password, Salt, Secret, Associated_Data, Digest);
    end Compute;
 
-end Argon2id.H0;
+end Argon2.H0;

@@ -11,8 +11,9 @@ with Interfaces.C;
 with System;
 
 with Blake2b;
-with Argon2id; use Argon2id;
-with Argon2id.H0;
+with Blake2b.Hashing;
+with Argon2; use Argon2;
+with Argon2.H0;
 with H0_Vectors;
 
 package body H0_Tests is
@@ -130,12 +131,29 @@ package body H0_Tests is
       return Digest;
    end Oracle_Serialised;
 
+   --  H0 with its scratch (the hash state) supplied here, as a caller of
+   --  the library would.
+   procedure Compute_With_Scratch
+     (Password, Salt, Secret, Associated_Data : Byte_Array;
+      Parallelism, Tag_Length, Memory, Passes, Version, Kind : U32;
+      Digest : out Blake2b.Byte_Array)
+   is
+      Hash_State : Blake2b.Hashing.State;
+   begin
+      Argon2.H0.Compute
+        (Password => Password, Salt => Salt, Secret => Secret,
+         Associated_Data => Associated_Data, Parallelism => Parallelism,
+         Tag_Length => Tag_Length, Memory => Memory, Passes => Passes,
+         Version => Version, Kind => Kind, Digest => Digest,
+         Hash_State => Hash_State);
+   end Compute_With_Scratch;
+
    function Implementation (Params : Parameters; P, S, K, X : Byte_Array)
       return Digest_64
    is
       Digest : Digest_64 := [others => 16#A5#];
    begin
-      Argon2id.H0.Compute
+      Compute_With_Scratch
         (Password        => P,
          Salt            => S,
          Secret          => K,
@@ -406,7 +424,7 @@ package body H0_Tests is
       Buffer : Blake2b.Byte_Array (99 .. 164) := [others => 16#A5#];
       Short  : Blake2b.Byte_Array (0 .. 31);
    begin
-      Argon2id.H0.Compute
+      Compute_With_Scratch
         (One, One, One, One, Params (0), Params (1), Params (2), Params (3),
          Params (4), Params (5), Buffer (100 .. 163));
       Check (Buffer (100 .. 163) = Oracle_H0 (Params, One, One, One, One),
@@ -414,7 +432,7 @@ package body H0_Tests is
       Check (Buffer (99) = 16#A5# and then Buffer (164) = 16#A5#,
              "digest leaves both guard bytes");
       begin
-         Argon2id.H0.Compute
+         Compute_With_Scratch
            (One, One, One, One, Params (0), Params (1), Params (2),
             Params (3), Params (4), Params (5), Short);
          Check (False, "a 32-byte digest must fail the precondition");
@@ -544,22 +562,22 @@ package body H0_Tests is
       end loop;
       case Which is
          when 0 =>
-            Argon2id.H0.Compute
+            Compute_With_Scratch
               (Big, Shorts (1).all, Shorts (2).all, Shorts (3).all,
                Long_Params (0), Long_Params (1), Long_Params (2),
                Long_Params (3), Long_Params (4), Long_Params (5), Got);
          when 1 =>
-            Argon2id.H0.Compute
+            Compute_With_Scratch
               (Shorts (0).all, Big, Shorts (2).all, Shorts (3).all,
                Long_Params (0), Long_Params (1), Long_Params (2),
                Long_Params (3), Long_Params (4), Long_Params (5), Got);
          when 2 =>
-            Argon2id.H0.Compute
+            Compute_With_Scratch
               (Shorts (0).all, Shorts (1).all, Big, Shorts (3).all,
                Long_Params (0), Long_Params (1), Long_Params (2),
                Long_Params (3), Long_Params (4), Long_Params (5), Got);
          when others =>
-            Argon2id.H0.Compute
+            Compute_With_Scratch
               (Shorts (0).all, Shorts (1).all, Shorts (2).all, Big,
                Long_Params (0), Long_Params (1), Long_Params (2),
                Long_Params (3), Long_Params (4), Long_Params (5), Got);
@@ -616,7 +634,7 @@ package body H0_Tests is
          Got : Digest_64 := [others => 0];
       begin
          Start := Clock;
-         Argon2id.H0.Compute
+         Compute_With_Scratch
            (Input.all, Input.all, Input.all, Input.all,
             Long_Params (0), Long_Params (1), Long_Params (2),
             Long_Params (3), Long_Params (4), Long_Params (5), Got);

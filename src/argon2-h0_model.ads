@@ -33,7 +33,7 @@ with Blake2b.Streaming.Theory;
 --    message, wherever the run is cut. Lemma_Field_Chunk and
 --    Lemma_Input_Chunk apply it to a call's fields and input chunks.
 --  * H0_Contents builds the sources from the caller's arguments, and
---    H0_Hash is the digest Argon2id.H0.Compute is proved to return.
+--    H0_Hash is the digest Argon2.H0.Compute is proved to return.
 --  * Serialised is the message as one array, byte by byte off the
 --    formula; Lemma_Spec_Hash and Lemma_H0_Spec_Hash tie the logical hash
 --    to Blake2b.Spec.Hash of it whenever it fits one array (2**31 bytes).
@@ -44,7 +44,7 @@ with Blake2b.Streaming.Theory;
 --  package's elaboration flag (a library member with no symbols makes
 --  macOS ranlib warn).
 
-package Argon2id.H0_Model
+package Argon2.H0_Model
   with SPARK_Mode, Pure
 is
    use Blake2b.Streaming;
@@ -582,4 +582,4 @@ is
                                      Passes, Version, Kind, P, S, K, X)),
                        Blake2b.No_Bytes, 64);
 
-end Argon2id.H0_Model;
+end Argon2.H0_Model;

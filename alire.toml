@@ -1,11 +1,12 @@
-name = "argon2id"
-description = "Argon2 H-prime and the H0 pre-hashing digest in SPARK; early Argon2id"
+name = "argon2"
+description = "Argon2 (RFC 9106) in SPARK: H-prime, H0, block compression; early"
 version = "0.1.0-dev"
 
 authors = ["Matt Doughty"]
 maintainers = ["Matt Doughty <matt@apogee.guru>"]
 maintainers-logins = ["m-doughty"]
 licenses = "BSD-3-Clause"
+website = "https://github.com/m-doughty/argon2"
 tags = ["spark", "argon2", "argon2id", "hash", "crypto", "proof"]
 
 [[depends-on]]

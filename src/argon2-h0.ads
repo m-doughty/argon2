@@ -4,9 +4,10 @@
 with Interfaces;
 
 with Blake2b;
-with Argon2id.H0_Model;
+with Blake2b.Hashing;
+with Argon2.H0_Model;
 
-package Argon2id.H0
+package Argon2.H0
   with SPARK_Mode
 is
    use type Blake2b.Byte_Array;
@@ -31,11 +32,17 @@ is
    --  H0_Model proves that message is the formula's, byte by byte, and
    --  that its hash is Blake2b.Spec.Hash of the explicit bytes wherever
    --  they fit one array (Lemma_H0_Spec_Hash).
+   --
+   --  Hash_State is scratch: the BLAKE2b state that absorbs the password,
+   --  salt, secret and associated data. The caller supplies it (it may hold
+   --  anything on entry) and owns its cleanup after an abnormal exit; on a
+   --  normal return it has been finalized, which wipes it.
    procedure Compute
      (Password, Salt, Secret, Associated_Data : Byte_Array;
       Parallelism, Tag_Length, Memory, Passes, Version, Kind :
         Interfaces.Unsigned_32;
-      Digest : out Blake2b.Byte_Array)
+      Digest : out Blake2b.Byte_Array;
+      Hash_State : out Blake2b.Hashing.State)
    with Global => null,
         Pre    => Digest'Length = 64,
         Post   =>
@@ -53,4 +60,4 @@ private
    pragma Machine_Attribute (Compute, "zero_call_used_regs", "all");
    pragma Warnings
      (GNATprove, On, "pragma ""Machine_Attribute"" ignored*");
-end Argon2id.H0;
+end Argon2.H0;

@@ -1,4 +1,4 @@
---  Tests of Argon2id.H0.Compute, RFC 9106 section 3.2's H0.
+--  Tests of Argon2.H0.Compute, RFC 9106 section 3.2's H0.
 --
 --  Copyright (c) 2026, Matt Doughty
 --  SPDX-License-Identifier: BSD-3-Clause

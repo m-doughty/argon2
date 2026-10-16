@@ -18,7 +18,7 @@
 # Two checks are specific to this crate:
 #   * the only compiler annotation that silences a warning outside a
 #     `pragma Warnings` region is the single `pragma Unreferenced` that
-#     TRUST.md records as N-4, in src/argon2id-h0_model.adb; any other one,
+#     TRUST.md records as N-4, in src/argon2-h0_model.adb; any other one,
 #     or a second there, fails;
 #   * the project file keeps the proof's warnings fatal (--warnings=error,
 #     -gnatwe) and does not switch warnings off (-gnatws, --warnings=off,
@@ -151,10 +151,10 @@ unreferenced () {
     return 1
   fi
   total=$(awk -F'\t' '{ n += $2 } END { print n + 0 }' <<< "$hits")
-  in_model=$(awk -F'\t' '$1 ~ /(^|\/)argon2id-h0_model\.adb$/ { n += $2 } END { print n + 0 }' <<< "$hits")
+  in_model=$(awk -F'\t' '$1 ~ /(^|\/)argon2-h0_model\.adb$/ { n += $2 } END { print n + 0 }' <<< "$hits")
   if [ "$total" -ne 1 ] || [ "$in_model" -ne 1 ]; then
     echo "FORBIDDEN (pragma Unreferenced other than the one registered as N-4):"
-    printf '  %s\n' "${hits:-(none found; N-4 expects exactly one in argon2id-h0_model.adb)}"
+    printf '  %s\n' "${hits:-(none found; N-4 expects exactly one in argon2-h0_model.adb)}"
     return 1
   fi
 }
@@ -234,16 +234,16 @@ self_test () {
   fi
   # pragma Unreferenced: exactly one, in the model body.
   mkdir -p "$dir/u"
-  printf 'procedure P is\n  pragma Unreferenced (X);\nbegin null; end P;\n' > "$dir/u/argon2id-h0_model.adb"
+  printf 'procedure P is\n  pragma Unreferenced (X);\nbegin null; end P;\n' > "$dir/u/argon2-h0_model.adb"
   printf 'procedure Q is begin null; end Q;\n' > "$dir/u/other.adb"
   printf 'procedure R is\n  PRAGMA\n  UNREFERENCED (X);\nbegin null; end R;\n' > "$dir/u/third.adb"
   printf -- '-- pragma Unreferenced (X);\nprocedure S is begin null; end S;\n' > "$dir/u/comment.adb"
-  if unreferenced "$dir/u/argon2id-h0_model.adb" "$dir/u/other.adb" "$dir/u/comment.adb" > /dev/null; then
+  if unreferenced "$dir/u/argon2-h0_model.adb" "$dir/u/other.adb" "$dir/u/comment.adb" > /dev/null; then
     pass=$((pass + 1))
   else
     echo "self-test FAILED: unreferenced-registered (flagged)"; bad=$((bad + 1))
   fi
-  if unreferenced "$dir/u/argon2id-h0_model.adb" "$dir/u/third.adb" > /dev/null; then
+  if unreferenced "$dir/u/argon2-h0_model.adb" "$dir/u/third.adb" > /dev/null; then
     echo "self-test FAILED: unreferenced-extra-file (not flagged)"; bad=$((bad + 1))
   else
     pass=$((pass + 1))
@@ -291,7 +291,7 @@ SUPPRESSIONS=0
 fail=0
 scan src/*.ads src/*.adb || fail=1
 unreferenced src/*.ads src/*.adb || fail=1
-project_flags argon2id.gpr || fail=1
+project_flags argon2.gpr || fail=1
 
 echo "warning suppressions ($SUPPRESSIONS, each with a Reason):"
 grep -rn -i -A2 'pragma warnings' src/ | grep -i -E '\boff\b' \

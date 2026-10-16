@@ -1,4 +1,4 @@
-# argon2id trust register
+# argon2 trust register
 
 Everything the crate's claims rest on that its own proof does not
 establish. **No entry is signed.** The sign-off is a signature by the
@@ -7,9 +7,11 @@ every sign-off reads `unsigned`. Entries here are proposals, and an agent
 cannot sign them. The README says what is proven, what is tested and what is
 trusted; this file is the detail behind its "trusted" list.
 
-The crate is an early milestone: H′ (RFC 9106 §3.3) and H₀ (RFC 9106 §3.2).
-Memory filling, block compression and the public password-hashing interface
-do not exist yet, and nothing here covers them.
+The crate is an early milestone: H′ (RFC 9106 §3.3), H₀ (RFC 9106 §3.2) and
+block compression (RFC 9106 §§3.5, 3.6). Memory filling and the public
+password-hashing interface do not exist yet, and nothing here covers them.
+Block compression is covered as S-4, N-1 and N-5 say, and not by H-1 (it is
+not hardened).
 
 ## Summary
 
@@ -19,11 +21,11 @@ do not exist yet, and nothing here covers them.
 | Unproved code (`SPARK_Mode => Off`, C or Rust behind it) | none in `src/` | would need one each |
 | Third-party SPARK | blake2b 0.1.1, same maintainer, its own register (D-1) | listed |
 | Trusted definitions | none | would need one each |
-| Warning suppressions | W-1 to W-6 (`pragma Warnings`); see also N-4 | no, each has a recorded `Reason` |
+| Warning suppressions | W-1, W-2, W-4 to W-6 (`pragma Warnings`; W-3 retired); see also N-4 | no, each has a recorded `Reason` |
 | Toolchain and proof model | T-1 to T-3 | a bump is a signed change |
-| The specification | S-1 to S-3 | listed |
-| Not proved | H-1 (wiping), H-2 (abnormal exits) | listed |
-| Test-only trust (C oracles, `Import`ed C in `tests/`, CPython-generated vectors) | T-4 | listed; the separate tests register this crate's rules ask for does not exist yet |
+| The specification | S-1 to S-4 | listed |
+| Not proved | H-1 (wiping), H-2 (abnormal exits), H-3 (secrets held outside a future cleanup guard) | listed |
+| Test-only trust (C oracles, `Import`ed C in `tests/`, CPython-generated vectors, published block vectors) | T-4 | listed; the separate tests register this crate's rules ask for does not exist yet |
 
 `scripts/check-sources.sh` enforces the first two rows, the warning
 suppressions and the `Unreferenced` pragma, on the source as the compiler reads it (comments and strings
@@ -32,17 +34,21 @@ removed, case and line breaks normalised). It fails on any `Assume`, `Import`,
 `Skip_Proof` in `src/`; on a `pragma Warnings` suppression without a `Reason`;
 when the number of suppressions differs from the number of `W-n` rows of this
 register; on any `pragma Unreferenced` other than the single one in
-`src/argon2id-h0_model.adb` (N-4); and when `argon2id.gpr` no longer carries
+`src/argon2-h0_model.adb` (N-4); and when `argon2.gpr` no longer carries
 `--warnings=error` and `-gnatwe` or adds a switch that turns warnings off.
 It checks the count of the `W-n` rows, not that each row names the right
 place, and `--self-test` runs it against known bypasses. The project's
 `--warnings=error` also makes any unexplained proof warning fail the proof.
 
 **What CI is configured to run, once it has run** (it has not): on each of
-the four platforms the build with checks and contracts, the H′ and H₀ tests
-including `--long`, and `scripts/check-h0-object.sh`; the full GNATprove run;
-and, once, `scripts/check-sources.sh` (and its self-test), `scripts/check-dependency.sh`, `scripts/h0-vectors.py --check` and the
-proof-judge self-test. It does not run the mutation and coverage suite
+the four platforms the build with checks and contracts, the H′, H₀ and
+compression tests including `--long`, and `scripts/check-h0-object.sh`; the
+full GNATprove run followed by `scripts/check-proof-output.sh` (and its
+self-test), which fails if a unit was skipped or a check is unproved or
+justified; and, once, `scripts/check-sources.sh` (and its self-test),
+`scripts/check-dependency.sh`, `scripts/h0-vectors.py --check`,
+`scripts/h-prime-vectors.py --check`, `scripts/compression-vectors.py --check`
+and the proof-judge self-test. It does not run the mutation and coverage suite
 (`scripts/h0-mutants.sh`). Nothing below depends on a CI result as yet.
 
 ## Entries
@@ -54,17 +60,18 @@ proof-judge self-test. It does not run the mutation and coverage suite
 | T-3 | Proof model | GNAT runtime big-integer library | unsigned |
 | T-4 | Test-only trust | the C oracles and `Import`ed C in `tests/` | unsigned |
 | D-1 | Third-party SPARK | `blake2b` 0.1.1 from the Alire index | unsigned |
-| S-1 | Specification | `Argon2id.H0_Model` is the RFC 9106 §3.2 message | unsigned |
+| S-1 | Specification | `Argon2.H0_Model` is the RFC 9106 §3.2 message | unsigned |
 | S-2 | Specification | `Blake2b.Spec` is RFC 7693, and `Logical_Hash` is BLAKE2b beyond 2³¹ bytes | unsigned |
-| S-3 | Specification | H′ is RFC 9106 §3.3 (no functional proof) | unsigned |
+| S-3 | Specification | `Argon2.H_Prime_Model` is RFC 9106 §3.3 | unsigned |
+| S-4 | Specification | `Argon2.Compression_Model` is RFC 9106 §§3.5, 3.6 | unsigned |
 | H-1 | Not proved | wipes, register and stack clearing | unsigned |
 | H-2 | Not proved | exceptional and asynchronous exits | unsigned |
-| W-1 | Warning suppression | `src/argon2id-h0.ads` (`Compute`), `Machine_Attribute` | no signature needed |
-| W-2 | Warning suppression | `src/argon2id-h0.adb`, `Machine_Attribute` on seven helpers | no signature needed |
-| W-3 | Warning suppression | `src/argon2id-h0.adb` (`Compute`), `St` is set by `Finish` but not used | no signature needed |
-| W-4 | Warning suppression | `src/argon2id-h_prime.ads` (`Hash`), `Machine_Attribute` | no signature needed |
-| W-5 | Warning suppression | `src/argon2id-h_prime.adb` (`Copy_Chunk`, `Initial_Hash`), `Machine_Attribute` | no signature needed |
-| W-6 | Warning suppression | `src/argon2id-wipe.ads` (`Bytes`), `Machine_Attribute` | no signature needed |
+| H-3 | Not proved | the cleanup guard does not exist yet; BLAKE2b's own compression frame will stay outside it | unsigned |
+| W-1 | Warning suppression | `src/argon2-h0.ads` (`Compute`), `Machine_Attribute` | no signature needed |
+| W-2 | Warning suppression | `src/argon2-h0.adb`, `Machine_Attribute` on seven helpers | no signature needed |
+| W-4 | Warning suppression | `src/argon2-h_prime.ads` (`Hash`), `Machine_Attribute` | no signature needed |
+| W-5 | Warning suppression | `src/argon2-h_prime.adb` (`Initial_Hash`), `Machine_Attribute` | no signature needed |
+| W-6 | Warning suppression | `src/argon2-wipe.ads` (`Bytes`), `Machine_Attribute` | no signature needed |
 
 ### T-1 Compiler and build tools
 - **Proposition:** GNAT 16.1.0 compiles the SPARK source to code that behaves
@@ -80,13 +87,27 @@ proof-judge self-test. It does not run the mutation and coverage suite
   matrix or build-matrix script exists, unlike blake2b; Alire's default
   `development` profile also exists and is not used for any claim). The same
   proof, tests and checks then ran on Linux arm64 and Linux x86_64 in
-  containers (the first run on 14 October 2026, the second, on the final
-  sources of this draft, on 15 October 2026; GNAT, GNATprove and the provers
-  at the pinned versions, but gprbuild 26.0.0, not 26.0.1, which the images
-  carry), with the same result, plus the long-input tests (21 passed on each)
-  on the first run's sources. Those runs used a copy of blake2b 0.1.1 beside
-  the crate, not the index. Windows x86_64 has no evidence yet, and CI for the
-  four platforms is configured and has not run.
+  containers, on 14 and 15 October 2026, with the same result (GNAT,
+  GNATprove and the provers at the pinned versions; the images carry the
+  gprbuild 26.0.1 crate, whose binary reports itself as 26.0.0 there as on
+  macOS), plus the long-input tests (21 passed on each) on the first run's
+  sources. The first two Linux runs predate the crate's present name (it was
+  `argon2id` then). A third run on 15 October, on the renamed crate, passed
+  on both architectures: every gate (dependency, sources and its self-test,
+  test vectors, the judge's self-test), the validation and release builds,
+  1444 tests, the object check, and the cold whole-crate proof (2750 checks,
+  none unproved; 1036 s on arm64, 1888 s on amd64), with the margin and
+  coverage reports as before (costliest condition 2807 of 5000 steps). The
+  long-input tests were not repeated on it. That tree had no compression and
+  the older H′ (chunked input). On 16 October 2026, on macOS arm64, the
+  current tree (H′ taking a BLAKE2b array of at most 1,024 bytes and proved
+  equal to its model, `Argon2.Blocks`, compression and its model) passes 4236
+  tests, the source gate, and a cold whole-crate proof of 3338 checks with none
+  unproved, none
+  justified and no unit skipped (`scripts/check-proof-output.sh`); a fresh
+  Linux run of it is pending. All three runs used a copy of
+  blake2b 0.1.1 beside the crate, not the index. Windows x86_64 has no
+  evidence yet, and CI for the four platforms is configured and has not run.
 - **If false:** a proof could hold for a program the compiler does not
   produce. The tests would be the only remaining evidence.
 - **Scope:** all code. A version bump is a signed change.
@@ -94,7 +115,7 @@ proof-judge self-test. It does not run the mutation and coverage suite
 ### T-2 Provers
 - **Proposition:** Z3 4.15.4, cvc5 1.3.2 and Alt-Ergo 2.6.1, driven by Why3 as
   shipped with GNATprove 16.1.0, never report a false statement proved.
-- **Why believed:** widely used. The crate's proof (`argon2id.gpr`, and CI)
+- **Why believed:** widely used. The crate's proof (`argon2.gpr`, and CI)
   races all three and is limited in steps, not time (`--timeout=0`). On top of
   that, a local script, `scripts/h0-mutants.sh`, shows at its baseline that
   every H₀ check is proved by at least two provers each on its own (as run
@@ -111,7 +132,9 @@ proof-judge self-test. It does not run the mutation and coverage suite
   the crate's own proof, which has none; and its logs are kept outside the repository (they are gitignored),
   so the repository itself retains no record of the result. The H′ and wipe
   checks, and blake2b's units on which the H₀ proof depends, are not held to
-  the two-prover rule.
+  the two-prover rule. The H′ units are set to 10,000 steps per check; run cold
+  they prove at 5,000 and fail at 2,500, a twofold margin, and neither the
+  margin gate nor the two-prover gate has been run on them.
 - **If false:** a lemma or postcondition could be false while shown proved.
 - **Scope:** every proved check.
 
@@ -127,28 +150,53 @@ proof-judge self-test. It does not run the mutation and coverage suite
 - **If false:** the length claims in ghost code could be about the wrong
   numbers.
 - **Scope:** ghost code only. `scripts/check-h0-object.sh` scans the symbols of
-  `argon2id-h0.o` and `argon2id-h_prime.o` (release and validation) for
-  big-integer symbols and finds none; for `argon2id-h0_model.o` it checks only
+  `argon2-h0.o` and `argon2-h_prime.o` (release and validation) for
+  big-integer symbols and finds none; for `argon2-h0_model.o` it checks only
   that the object's one external symbol is its elaboration flag and that it
   references nothing.
 
 ### T-4 Test-only trust
 - **Proposition:** the C code in `tests/` is a valid reference. It decides
-  whether the specification claims (S-1, S-3) are believed, not whether the
+  whether the specification claims (S-1, S-3, S-4) are believed, not whether the
   proofs hold; production proof takes no result or contract from it.
 - **What there is:**
-  - four `Import`ed C functions in the tests (three in `tests/src/h0_tests.adb`,
-    one in `tests/src/test_main.adb`), compiled at `-O3` by
-    `tests/argon2id_tests.gpr`;
-  - the vendored official Argon2 reference files, pinned to an upstream commit
-    (`tests/ref/README.md`), with a test-only shim for `clear_internal_memory`;
+  - five `Import`ed C functions in the tests (`compress_oracle` in
+    `tests/src/compression_tests.adb`; `h0_oracle`, `h0_oracle_generated` and
+    `blake2b_512` in `tests/src/h0_tests.adb`; `blake2b_long` in
+    `tests/src/test_main.adb`), compiled at `-O3` by `tests/argon2_tests.gpr`;
+  - the vendored official Argon2 reference files (`ref.c`, `core.c`, `core.h`,
+    `thread.h`, `blake2/blamka-round-ref.h`, the BLAKE2b files), unmodified and
+    pinned to an upstream commit (`tests/ref/README.md`); `core.c` is compiled
+    with `-DARGON2_NO_THREADS`; the earlier `clear_internal_memory` shim is
+    gone;
+  - for compression, `tests/ref/compress_oracle.c`, a test-only file that
+    `#include`s `ref.c` (which is never compiled alone) and exports one wrapper
+    around the reference's static `fill_block`: the oracle for both forms of G;
+  - for compression, 15 blocks taken from the reference's own known-answer
+    files (`tests/ref/kat-blocks.json`, `tests/src/compression_vectors.ads`,
+    produced and re-checked by `scripts/compression-vectors.py`, which the CI
+    `gates` job will run). The known-answer files themselves are not kept in the
+    repository; the script says how the blocks are found. Each stored block is
+    the compression of two other blocks of the same file, as the script
+    checks;
   - for H₀, three C functions written for the tests in `tests/src/h0_oracle.c`
     (an incremental serialisation, a one-shot hash of the serialisation the Ada
     test builds, and the generated-bytes oracle of the `--long` run). The first
-    two sit on the **one** vendored BLAKE2b implementation, and the reference's own
-    `initial_hash` is not vendored, so H₀ is checked against test-written
-    serialisations, not against the Argon2 reference's own H₀ code; H′ is
-    checked against the reference's own `blake2b_long`;
+    two sit on the **one** vendored BLAKE2b implementation. The reference's own
+    `initial_hash` is vendored (in `core.c`) but no test calls it, so H₀ is
+    checked against test-written serialisations, not against the Argon2
+    reference's own H₀ code; H′ is checked against the reference's own
+    `blake2b_long`, and against CPython (below); compression against the
+    reference's own `fill_block`;
+  - for H′, 53 expected outputs computed with CPython's `hashlib.blake2b`
+    straight from RFC 9106 §3.3 (`tests/src/h_prime_vectors.ads`, produced and
+    re-checked by `scripts/h-prime-vectors.py`, which the CI `gates` job will
+    run). Each is recorded as the 32-byte BLAKE2b digest of the whole output,
+    because outputs reach 2²⁰ + 8 bytes; the test hashes its own output the same
+    way. The input bytes are one formula written twice (the script and
+    `tests/src/h_prime_tests.adb`), so the hashing is independent, not the
+    inputs. The test-only files are `tests/src/h_prime_tests.ads` and `.adb`
+    and the generated `tests/src/h_prime_vectors.ads`;
   - input bytes from one formula written twice, in the `--long` run (Ada and C)
     and in the nineteen CPython cases (`scripts/h0-vectors.py` and
     `tests/src/h0_tests.adb`), so there the hashing is independent, not the
@@ -167,8 +215,7 @@ proof-judge self-test. It does not run the mutation and coverage suite
 
 ### D-1 blake2b 0.1.1
 - **Proposition:** the contracts and lemmas the proofs here use are true of
-  blake2b's code: `Blake2b.Hashing` (`Init`, `Update`, `Final`, and the one-shot `Hash`, which
-  H′ calls),
+  blake2b's code: `Blake2b.Hashing` (`Init`, `Update` and `Final`),
   `Blake2b.Streaming` and `.Theory` (including `Logical_Equal` on
   `Same_Context`), `.Consistency`, `.Example` (`Lemma_Room`) and
   `Blake2b.Spec` with `Blake2b.Spec.Incremental`.
@@ -189,7 +236,7 @@ proof-judge self-test. It does not run the mutation and coverage suite
   that, the proofs fail; they cannot succeed on a wrong statement.
 
 ### S-1 The H₀ message
-- **Proposition:** `Argon2id.H0_Model` (`H0_Original`, `H0_Contents`,
+- **Proposition:** `Argon2.H0_Model` (`H0_Original`, `H0_Contents`,
   `H0_Hash`) describes exactly the message RFC 9106 §3.2 hashes: the ten
   little-endian 32-bit fields p, T, m, t, v, y and the four lengths, in the
   RFC's order, interleaved with P, S, K, X, using the original m, not the
@@ -208,7 +255,7 @@ proof-judge self-test. It does not run the mutation and coverage suite
   with all four inputs at 2³²−1 bytes and with each of P, S, K, X at 2³¹−1,
   2³¹, 2³¹+1 and 2³²−1 bytes. See T-4 for what the oracles share.
 - **If false:** the code would be proved equal to the wrong function.
-- **Scope:** `Argon2id.H0.Compute`. Parameters are hashed as given; the
+- **Scope:** `Argon2.H0.Compute`. Parameters are hashed as given; the
   RFC's ranges are not checked here.
 
 ### S-2 BLAKE2b
@@ -232,51 +279,103 @@ proof-judge self-test. It does not run the mutation and coverage suite
   functional claims for the first half, as blake2b's S-1.
 
 ### S-3 H′
-- **Proposition:** `Argon2id.H_Prime.Hash` computes RFC 9106 §3.3 H′.
-- **What is proved:** absence of run-time errors, the exact encoding of the
-  output length, byte-for-byte correspondence of each copied chunk with its
-  input interval, the absorbed-byte counts and the output intervals
-  (`docs/proof-scope.md`). It is **not** proved equal to an independent
-  specification of H′. Discharging the size precondition of its calls to
-  `Blake2b.Hashing.Update` depends on blake2b's proof-visibility note N-2
-  (D-1).
-- **Why believed (tested, not proved):** cases against the vendored official
-  Argon2 C reference's `blake2b_long`, including boundary lengths, arbitrary
-  bounds and deterministic random inputs.
-- **If false:** H′ could differ from RFC 9106 on an input no test reaches.
-- **Scope:** `Argon2id.H_Prime`. A proof that H′ equals an independent
-  specification is not done.
+- **Proposition:** `Argon2.H_Prime_Model` (`Message`, `V`, `Tail`, `Out_Byte`) is
+  the variable-length hash H′ of RFC 9106 §3.3: for an output of T bytes and an
+  input A, the T-byte BLAKE2b of LE32 (T) ‖ A when T ≤ 64; otherwise, with
+  r = ⌈T/32⌉ − 2, the first 32 bytes of each of V₁ … Vᵣ (V₁ the 64-byte BLAKE2b
+  of LE32 (T) ‖ A, Vᵢ that of Vᵢ₋₁) followed by V(r+1), the BLAKE2b with a digest
+  length of T − 32r (33 to 64 bytes) of Vᵣ, not a truncation.
+- **What is proved:** after `Argon2.H_Prime.Hash (Input, Digest, …)`, byte P of
+  `Digest` equals `H_Prime_Model.Out_Byte (Input, Digest'Length, P)` for every P,
+  every output length from 1 to 2³²−1 bytes and every input of at most 1,024
+  bytes (the precondition), through blake2b's contracts for `Init`, `Update`
+  and `Final` and `Blake2b.Spec`. No run-time error, the exact little-endian
+  encoding of the output length, and zeroed chain values after their wipe
+  (`docs/proof-scope.md`). The proof of the calls to `Blake2b.Hashing.Update`
+  depends on blake2b's proof-visibility note N-2 (D-1), as before; that was not
+  re-examined for the new proof. The code was proved equal to the model, not to
+  the RFC: the model is a hand transcription, and a mistake in it would still
+  prove. The postcondition is `Static`: proved, never compiled or run (N-5).
+- **Why believed (tested, not proved):** 53 CPython `hashlib` outputs written
+  from the RFC text (T-4: inputs of 72 and 1,024 bytes, output lengths 1 to
+  2²⁰ + 8 including the 64/65 boundary and tails that are not multiples of 32,
+  and seven short and empty inputs), and the same lengths against the vendored
+  official Argon2 C reference's `blake2b_long`, with input lengths 0, 1, 72,
+  127, 128, 129, 1,023 and 1,024, output lengths from 1 to 1,025, arbitrary
+  bounds, deterministic random inputs, and a test that an input over 1,024
+  bytes is rejected. No test reaches output lengths above 2²⁰ + 8; for those
+  the proof is the only evidence, and it is a proof about the model. No mutation
+  suite covers H′ yet. Rests on `Blake2b.Spec` being BLAKE2b (S-2, D-1).
+- **If false:** H′ would be proved equal to the wrong function, or differ from
+  RFC 9106 on an output length above 2²⁰ + 8 where only the model's reading of
+  the RFC stands behind it.
+- **Scope:** `Argon2.H_Prime`, `Argon2.H_Prime_Model`. Not initialisation, the
+  fill or the final tag.
+
+### S-4 Block compression
+- **Proposition:** `Argon2.Compression_Model` (`G`, `G_Xor`, and the functions
+  they use: `FBlaMka`, `GB`, `P`, `Rows`, `Columns`) is the compression
+  function of RFC 9106 §§3.5 and 3.6, including version 1.3's later-pass form
+  (the old block xor `G`).
+- **What is proved:** after `Argon2.Compression.Compress (M, X, Y, Z)`, `M (Z)`
+  equals `G (M'Old (X), M'Old (Y))` and every other initialised block is
+  unchanged; after `Compress_Xor`, `M (Z)` equals
+  `G_Xor (M'Old (X), M'Old (Y), M'Old (Z))`. This holds for every index in
+  range, `Z` equal to `X` or `Y` included. The literal index lists the code
+  uses equal the model's row and column positions. `M (X)` and `M (Y)`
+  initialised on entry, `M (Z)` initialised on exit, nothing initialised
+  becomes uninitialised. No run-time error. The code was proved equal to the
+  model, not to the RFC: the model is a hand transcription, and a mistake in it
+  would still prove (its `FBlaMka` writes the truncating product with
+  `mod 2**32` where the code uses `and`: a second transcription).
+- **Why believed (tested, not proved):** the unmodified reference's
+  `fill_block` as oracle (T-4), on the 15 published blocks, every single-word
+  position in either input, extreme words, `X` equal to `Y`, pseudo-random
+  pairs, and `Z` equal to `X` or `Y`, in both forms. No mutation suite covers
+  compression yet.
+- **If false:** compression would be proved equal to the wrong function, and
+  the tests would be the only evidence against it.
+- **Scope:** `Argon2.Compression`, `Argon2.Compression_Model`. Not the memory
+  fill, indexing or the final tag.
 
 ### H-1 Wiping, registers and stack
-- **Proposition:** on normal return, `Argon2id.H0.Compute` and
-  `Argon2id.H_Prime.Hash` leave no copy of an input or intermediate digest
+- **Proposition:** on normal return, `Argon2.H0.Compute` and
+  `Argon2.H_Prime.Hash` leave no copy of an input or intermediate digest
   that the library holds in a buffer of its own, in a call-used register
   (callee-saved registers are not zeroed; the ABI restores them), or on the
   stack. The caller's own arrays are not erased by these calls.
-- **What is proved:** after `Argon2id.Wipe.Bytes`, every byte of the buffer it
+- **What is proved:** after `Argon2.Wipe.Bytes`, every byte of the buffer it
   is given is zero. That is about the value of an object only.
 - **What is requested, not proved or gated:** `Wipe.Bytes` is never inlined and
   is `noipa`, with an `Inspection_Point`; the entry points and the helpers that
   handle input carry `strub` and `zero_call_used_regs ("all")`. This crate has
   no object-code hardening gate (blake2b has `scripts/check-hardening.sh`);
   nothing checks that wipes or scrubbing exist in the object code.
+- **Compression is not hardened.** `Argon2.Compression` works on blocks of
+  workspace data (derived from the password, salt and key) and holds one local
+  block of working space; it has no wipe, no `strub` and no `zero_call_used_regs`
+  attribute, and `scripts/check-h0-object.sh` does not look at
+  `argon2-compression.o` or `argon2-compression_model.o`. No claim about
+  compression's stack or register residue is made. (Hardening and the extended
+  object check are pending; the new `Machine_Attribute` pragmas will each add a
+  `W-n` row.)
 - **What is checked in the objects, and what is not:** `scripts/check-h0-object.sh`
   looks for proof residue and runtime cleanup: it requires `Compute` and
-  `Hash` to be defined text symbols (not merely named), scans `argon2id-h0.o`
+  `Hash` to be defined text symbols (not merely named), scans `argon2-h0.o`
   for soft-links, abort-deferral, secondary-stack, big-integer, model and
   theory symbols by name (any symbol, defined or referenced, whose name
-  contains one), scans `argon2id-h_prime.o` for soft-links, abort-deferral,
+  contains one), scans `argon2-h_prime.o` for soft-links, abort-deferral,
   big-integer, streaming-theory, `Spec` and absorbed-counter names but not for
   the secondary stack (which H′'s length-encoding function uses; it holds the
-  output length, not a secret) nor for `Argon2id.H0_Model`, and checks that
-  the external symbols (`nm -g`) of `argon2id-h0_model.o` are only its
-  elaboration flag. That is a check on static ghost code having left nothing
+  output length, not a secret) nor for `Argon2.H0_Model`, and checks that
+  the external symbols (`nm -g`) of `argon2-h0_model.o` and
+  `argon2-h_prime_model.o` are only their elaboration flag. That is a check on static ghost code having left nothing
   behind (see N-2), not on wiping, and it looks at symbol names, not at the
   code.
 - **If false:** key- or password-derived bytes could remain in memory the
   library no longer controls.
 - **Scope:** macOS arm64, Linux arm64 and Linux x86_64 so far (the object check
-  ran in the containers on 14 and 15 October 2026); Windows x86_64 and the
+  ran in the containers on 14 and 15 October 2026, the last time on the renamed crate); Windows x86_64 and the
   compilers and targets of CI once it has run (T-1). See also H-2.
 
 ### H-2 Exceptional and asynchronous exits
@@ -289,44 +388,90 @@ proof-judge self-test. It does not run the mutation and coverage suite
   exit. The cleanup mechanism is a separate design, not part of this crate yet.
 - **Scope:** every call.
 
-### W-1 to W-6 `Machine_Attribute` ignored, and a state not read again
+### H-3 The cleanup guard, and what stays outside it
+- **Proposition:** none beyond H-1 and H-2. The cleanup guard and release
+  tokens do not exist yet. The units that handle secrets already take the
+  scratch the future guard will wipe as parameters, so it can reach them:
+  `Argon2.H_Prime.Hash` takes its BLAKE2b state and its two chain values
+  (`S`, `V`, `Next_V`); `Argon2.H0.Compute` takes its BLAKE2b state
+  (`Hash_State`); `Argon2.Compression.Compress` and `Compress_Xor` take their
+  working block (`Work`). On normal return H′ wipes its chain values
+  (`Argon2.Wipe.Bytes`) and BLAKE2b's `Final` wipes its state; compression
+  does not wipe `Work`, the caller does.
+- **What stays outside any guard:** the working vector and message words that
+  `Blake2b.Core.Compress` keeps in its own locals (`M`, `V`). Only `blake2b`
+  itself could change that. They rest on `blake2b`'s own `strub` and
+  `zero_call_used_regs` attributes and its hardening check (its H-1), not on
+  this crate.
+- **What is requested, not proved or gated:** stack scrubbing and register
+  clearing by compiler attributes (`strub`, `zero_call_used_regs`), which are
+  not proved and not yet gated here (H-1); none is requested for compression
+  until its hardening step.
+- **If false:** after an abnormal exit (H-2), or if a scrub is not emitted,
+  bytes derived from the password or key can remain in stack memory the library
+  no longer controls.
+- **Scope:** the future public calls; today, `Argon2.H_Prime.Hash`,
+  `Argon2.H0.Compute` and `Argon2.Compression`.
+
+### W-1, W-2, W-4 to W-6 `Machine_Attribute` ignored
 - **W-1, W-2, W-4, W-5, W-6** (`Machine_Attribute` ignored by GNATprove):
-  `src/argon2id-h0.ads` (`Compute`); `src/argon2id-h0.adb` (`Store_LE32`,
+  `src/argon2-h0.ads` (`Compute`); `src/argon2-h0.adb` (`Store_LE32`,
   `Copy_Chunk`, `Copy_Input`, `Absorb_Field`, `Absorb_Chunk`, `Absorb_Input`,
-  `Finish`); `src/argon2id-h_prime.ads` (`Hash`); `src/argon2id-h_prime.adb`
-  (`Copy_Chunk`, `Initial_Hash`); `src/argon2id-wipe.ads` (`Bytes`).
+  `Finish`); `src/argon2-h_prime.ads` (`Hash`); `src/argon2-h_prime.adb`
+  (`Initial_Hash`); `src/argon2-wipe.ads` (`Bytes`).
   **Reason recorded:** "code-generation attribute: no effect on proof".
   GNATprove ignores the attribute, which is correct: it affects code
   generation only.
-- **W-3** (`"St" is set by "Finish" but not used`): `src/argon2id-h0.adb`,
-  around the call to `Finish` in `Compute`. **Reason recorded:** "the state is
-  finalized and wiped; only Digest is used".
+- **W-3** was retired when `Argon2.H0.Compute`'s BLAKE2b state became a
+  formal (`Hash_State`): the unused-state warning no longer arises and the
+  suppression is gone from `src/argon2-h0.adb`.
 
 ## Notes
 - **N-1 Annotations that are not trusted:** `Hide_Info` on `H0_Original`,
-  `Fields_Of`, `H0_Contents` and `Chunk_At` (`src/argon2id-h0_model.ads`) hide
+  `Fields_Of`, `H0_Contents` and `Chunk_At` (`src/argon2-h0_model.ads`) hide
   an expression function's body from the provers. Each is reopened by
   `Unhide_Info` in a lemma that GNATprove proves, so they are proof
   engineering, not assumptions. `Logical_Equal` is blake2b's, checked there.
-- **N-2 Static ghost code:** every declaration in `Argon2id.H0_Model` is
+  The same holds for compression: `Hide_Info` on `FBlaMka`, `GB` and `P`
+  (`src/argon2-compression_model.ads`) hide a function's body from the provers,
+  and each is reopened by `Unhide_Info` in the compression body where GNATprove
+  proves it; `Logical_Equal` on `Same_Block` and `Same_Positions`
+  (`src/argon2-compression.adb`) makes the provers substitute array equality,
+  and lemmas convert it to ordinary equality. Proof engineering, not
+  assumptions.
+- **N-2 Static ghost code:** every declaration in `Argon2.H0_Model` is
   `Ghost => Static`, so nothing of it is compiled in any profile. In
-  `Argon2id.H0`, the static loop invariants of `Absorb_Input` and `Compute` are
+  `Argon2.H0`, the static loop invariants of `Absorb_Input` and `Compute` are
   a single call to a static ghost function (`In_Progress`); written inline they
   left abort-deferral calls in the release object. `Copy_Chunk`'s static
   invariant is an inline quantified expression over the arrays and leaves no
-  such calls (checked by `scripts/check-h0-object.sh`). H′ keeps inline
-  static invariants, including one over the big-integer counter; its object is
-  checked by the same script and is clean.
-- **N-4 A warning annotation outside W-1 to W-6:** `pragma Unreferenced (Off,
-  Src, From)` in `Argon2id.H0_Model` (`src/argon2id-h0_model.adb`, the body of
+  such calls (checked by `scripts/check-h0-object.sh`). H′'s object is checked
+  by the same script.
+- **N-4 A warning annotation outside the W rows:** `pragma Unreferenced (Off,
+  Src, From)` in `Argon2.H0_Model` (`src/argon2-h0_model.adb`, the body of
   a ghost procedure) silences unused-parameter diagnostics, because those
   parameters appear only in the contract. It is not a `pragma Warnings` region
   and affects no proof.
+- **N-5 A `Static` postcondition and assertion levels:** `Compress` and
+  `Compress_Xor` state their result in a `Static` postcondition
+  (`src/argon2-compression.ads`, with `pragma Assertion_Level (Executable)`
+  naming the other level), and `Hash` does the same for H′
+  (`src/argon2-h_prime.ads`). GNATprove proves them; no build compiles or runs
+  them, and `Compression_Model` and `H_Prime_Model` are static ghost code, so
+  nothing of either model is in any object. The result of compression and of H′
+  is therefore checked at run time only by the tests against the reference
+  oracle (and, for H′, CPython). This uses GNAT 16.1.0's assertion
+  levels (T-1).
 - **N-3 Follow-ups before signature:**
   - the separate test-only register this crate's rules ask for, and the
     machine-checked link from this one;
   - an object-code hardening gate for `Compute` and `Hash`;
-  - the proof and the tests on the other three platforms (CI is configured);
+  - the proof and the tests of the current tree on Linux and Windows, and in CI
+    (configured, not run);
+  - the object-code hardening gate extended to compression, with its
+    `Machine_Attribute` rows;
+  - `scripts/check-h0-object.sh` extended to the compression objects (and a
+    check for the one-symbol claim in `argon2-compression_model.ads`);
   - keeping the mutation and coverage logs where the repository, not a
     gitignored directory, holds them, or running the suite in CI;
   - `Lemma_Room` comes from a blake2b example unit,

@@ -5,7 +5,7 @@ Two commands:
 
   spark-proof.py margin LIMIT COSTS.json DIR PROVER,... UNIT...
       The step-margin gate for the baseline. For each UNIT (e.g.
-      argon2id-h0_model.adb), DIR holds baseline.<stem>.spark, the
+      argon2-h0_model.adb), DIR holds baseline.<stem>.spark, the
       proof with every prover, and baseline.<stem>.<prover>.spark, a proof
       with that prover alone, for each PROVER. A check's cost is the
       largest, over the check's VCs, of the fewest steps any prover took to
@@ -27,7 +27,7 @@ Two commands:
 
   spark-proof.py judge UNIT FILE.spark PROVER,... [--costs COSTS.json]
                        [--expect FILE:LINE:RULE]...
-      Judges one mutant's proof of UNIT (e.g. argon2id-h0_model.adb).
+      Judges one mutant's proof of UNIT (e.g. argon2-h0_model.adb).
       Only unproved checks located in UNIT's own spec or body count, and
       only failed proofs (severity low, medium or high on a VC_ rule), not
       proof warnings. Each is "clean" when one of its VCs was attempted by

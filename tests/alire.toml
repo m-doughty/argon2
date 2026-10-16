@@ -1,5 +1,5 @@
-name = "argon2id_tests"
-description = "Tests and proofs for the Argon2 H-prime milestone"
+name = "argon2_tests"
+description = "Tests and proofs for the Argon2 milestones"
 version = "0.1.0-dev"
 
 authors = ["Matt Doughty"]
@@ -10,11 +10,11 @@ executables = ["test_main"]
 
 # GNATprove is development-only: consumers depend on the library crate.
 [[depends-on]]
-argon2id = "*"
+argon2 = "*"
 gnatprove = "=16.1.0"
 
 [[pins]]
-argon2id = { path = ".." }
+argon2 = { path = ".." }
 
 [build-switches]
 "*".ada_version = "Ada2022"

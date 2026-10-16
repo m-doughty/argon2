@@ -3,7 +3,7 @@
 
 with Blake2b;
 
-private package Argon2id.Wipe
+private package Argon2.Wipe
   with SPARK_Mode, Pure
 is
    use type Blake2b.Byte;
@@ -20,4 +20,4 @@ is
    pragma Machine_Attribute (Bytes, "noipa");
    pragma Warnings
      (GNATprove, On, "pragma ""Machine_Attribute"" ignored*");
-end Argon2id.Wipe;
+end Argon2.Wipe;
