@@ -77,13 +77,13 @@ def h_prime(a, t):
         return blake(prefix + a, t)
     r = (t + 31) // 32 - 2
     v = blake(prefix + a, 64)               # V_1
-    out = b""
-    for _ in range(r - 1):
-        out += v[:32]
+    out = []                                # joined once: appending to a
+    for _ in range(r - 1):                  # bytes object is quadratic
+        out.append(v[:32])
         v = blake(v, 64)
-    out += v[:32]                           # V_r
-    out += blake(v, t - 32 * r)             # V_(r+1)
-    return out
+    out.append(v[:32])                      # V_r
+    out.append(blake(v, t - 32 * r))        # V_(r+1)
+    return b"".join(out)
 
 
 def cases():

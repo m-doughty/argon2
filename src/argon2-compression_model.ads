@@ -30,9 +30,10 @@ with Argon2.Blocks; use Argon2.Blocks;
 --
 --  Static ghost code: GNATprove proves it, and no build ever compiles it.
 --  Every subprogram is marked static ghost, and deliberately not the
---  package itself, so that its object file still holds one symbol, the
---  package's elaboration flag. The type Positions is an ordinary type
---  (it has no code) because the implementation uses it.
+--  package itself. The type Positions is an ordinary type because the
+--  implementation uses it. So the object file holds two symbols: the
+--  package's elaboration flag and the initialisation procedure GNAT
+--  generates for Positions, which does nothing (it returns at once).
 
 package Argon2.Compression_Model
   with SPARK_Mode, Pure

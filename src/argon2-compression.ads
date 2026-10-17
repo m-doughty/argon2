@@ -74,4 +74,15 @@ is
              (for all I in M'Range =>
                 (if I /= Z and then M'Old (I)'Initialized
                  then M (I) = M'Old (I))));
+
+private
+   pragma Warnings
+     (GNATprove, Off, "pragma ""Machine_Attribute"" ignored*",
+      Reason => "code-generation attribute: no effect on proof");
+   pragma Machine_Attribute (Compress, "strub", "internal");
+   pragma Machine_Attribute (Compress, "zero_call_used_regs", "all");
+   pragma Machine_Attribute (Compress_Xor, "strub", "internal");
+   pragma Machine_Attribute (Compress_Xor, "zero_call_used_regs", "all");
+   pragma Warnings
+     (GNATprove, On, "pragma ""Machine_Attribute"" ignored*");
 end Argon2.Compression;

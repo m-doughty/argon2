@@ -120,12 +120,21 @@ Several more commands are not part of the default run:
 - `./bin/test_main --long` (from `tests/`) runs only the long H0 tests (see
   below). They allocate up to 4 GiB at once (never 16 GiB) and took about
   4 minutes on Linux aarch64 and 8 minutes on Linux x86_64, in containers.
-- `bash scripts/check-h0-object.sh`, after the build, checks the compiled
-  objects: no trace of the proof (model, big integers, streaming
-  theory) and no abort-deferral calls in `argon2-h0.o` and
-  `argon2-h_prime.o`, no secondary stack in `argon2-h0.o`, and nothing
-  but the elaboration flag in `argon2-h0_model.o` and
-  `argon2-h_prime_model.o`.
+- `alr -C tests -n exec -- bash ../scripts/check-h0-object.sh` (from the
+  crate's root, after building both the `validation` and the `release`
+  profile; it needs the toolchain's `gcc` and an `objdump`, hence `alr exec`)
+  checks the compiled objects: no trace of the proof (model, big integers,
+  streaming theory) and no abort-deferral calls in `argon2-h0.o`,
+  `argon2-h_prime.o` and `argon2-compression.o`, no secondary stack in
+  `argon2-h0.o` and `argon2-compression.o`, nothing but the elaboration flag
+  in `argon2-h0_model.o` and `argon2-h_prime_model.o` (and, in
+  `argon2-compression_model.o`, the flag and the empty initialisation of the
+  type `Positions`). For compression it also reads the code: `Compress` and
+  `Compress_Xor` must have their stack-scrubbing (`strub`) clone, and every
+  return from them must zero the call-used registers that
+  `zero_call_used_regs ("all")` zeroes on the target, a set it measures by
+  compiling a probe with the same `gcc`.
+  `bash scripts/test-zeroed-at-return.sh` tests the disassembly parser it uses.
 - `python3 -I scripts/h0-vectors.py --check` checks that
   `tests/src/h0_vectors.ads`, the H0 digests computed with CPython's
   `hashlib`, is what the script generates (run it without `--check` to
@@ -231,11 +240,11 @@ specification against RFC 7693.
 `Blake2b.Hashing.Max_Input`'s private completion through proof
 visibility), and its specification, which its own tests validate against
 BLAKE2b; and on the toolchain (GNATprove, its provers, GNAT). The crate's
-own [TRUST.md](TRUST.md) lists all of it, unsigned: five GNATprove warning
+own [TRUST.md](TRUST.md) lists all of it, unsigned: six GNATprove warning
 suppressions, each with its reason (the ignored `Machine_Attribute` pragmas
 in `argon2-h0.ads`, `argon2-h0.adb`, `argon2-h_prime.ads`,
-`argon2-h_prime.adb` and `argon2-wipe.ads`), the test-only C code, and what
-is not proved.
+`argon2-h_prime.adb`, `argon2-wipe.ads` and `argon2-compression.ads`), the
+test-only C code, and what is not proved.
 
 **Scope limits.** H0, H′ and block compression only (internal building
 blocks): no Argon2 password hashing, no parameter validation, no memory
@@ -248,8 +257,8 @@ long tests exercise the maximum length and the 2³¹ boundaries once each.
 Buffers are wiped and the stack-scrubbing and register-clearing attributes
 are requested as for H′ (see "Zeroization boundary" in
 [docs/proof-scope.md](docs/proof-scope.md)), with the same limits; the
-object check above does not inspect the wipes, and does not look at the
-compression objects.
+object check above does not inspect the wipes, nor whether these attributes
+took effect in H0's object.
 
 ## H′: what is proven, tested and trusted
 
@@ -353,9 +362,15 @@ That it is the RFC's is **tested**.
 ([TRUST.md](TRUST.md) S-4), the toolchain, and the test-only C code.
 
 **Scope limits.** Compression only: no memory filling, no lane indexing, no
-password hashing, no Argon2d, Argon2i or Argon2id. Nothing about compression's
-use of the stack or registers is claimed: it has no wipe and no
-stack-scrubbing or register-clearing attributes, and the object check does not
-look at it.
+password hashing, no Argon2d, Argon2i or Argon2id. `Compress` and
+`Compress_Xor` request GCC's stack scrubbing (`strub`) and clearing of all
+call-used registers (`zero_call_used_regs`); that is requested and checked in
+the object code, not proved. The object check above finds the scrubbing clone
+and the register clearing at every return, in the `release` and `validation`
+objects; it has run on macOS arm64 only so far (17 October 2026), and CI runs
+it on the other three platforms. The scrub covers the frame of compression's
+own body, not the frames of the helpers it calls that are not inlined (see
+[TRUST.md](TRUST.md) H-1), and compression does not wipe `Work`: its caller
+does.
 
 Licensed under [BSD-3-Clause](LICENSE).

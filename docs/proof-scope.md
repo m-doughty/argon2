@@ -74,8 +74,12 @@ instructions require separate compiled-code inspection: a SPARK value
 proof cannot establish the absence of register copies or compiler spills.
 
 Compression works in one block of scratch (`Work`) that its caller supplies;
-nothing in `Compress` wipes it (the caller does), and no stack-scrubbing or
-register-clearing attribute is requested for it yet. H′ and H₀ likewise take
+nothing in `Compress` wipes it (the caller does). `Compress` and
+`Compress_Xor` request the same stack scrubbing and register clearing; for
+them, `scripts/check-h0-object.sh` checks the compiled code for the scrubbing
+clone and for the register clearing at every return. The scrub covers their
+own body's frame, not the frames of helpers the body calls that are not
+inlined. H′ and H₀ likewise take
 their BLAKE2b state, and H′ its two chain values, as scratch parameters, so a
 future cleanup guard can reach them. BLAKE2b's own compression frame stays
 outside any such guard and rests on `blake2b`'s attributes.

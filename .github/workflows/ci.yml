@@ -31,6 +31,8 @@ jobs:
         run: python3 -I scripts/h-prime-vectors.py --check
       - name: Proof-judge self-test
         run: python3 -I scripts/spark-proof.py selftest
+      - name: The register-clearing parser reads GNU and LLVM objdump on x86-64 and AArch64
+        run: bash scripts/test-zeroed-at-return.sh
 
   test:
     name: test (${{ matrix.name }})
@@ -74,11 +76,12 @@ jobs:
         run: |
           alr -n build --release --profiles=argon2=release
           ./bin/test_main
-      # The compiled H0 code holds no trace of the proof, the secondary stack
-      # or abort deferral (see the script's header). The validation objects
-      # come from the build above; the release build below replaces the test
-      # binary, so this step runs last.
-      - name: H0 object code carries no proof residue
+      # The compiled H0, H' and compression code holds no trace of the proof
+      # or abort deferral, and compression carries its stack-scrubbing clone
+      # and clears the call-used registers on return (see the script's
+      # header). The validation objects come from the build above; the
+      # release build below replaces the test binary, so this step runs last.
+      - name: Object code carries no proof residue; compression is hardened
         shell: bash
         run: |
           (cd tests && alr -n build)
