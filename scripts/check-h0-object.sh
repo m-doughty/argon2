@@ -182,9 +182,10 @@ not_cleared () {
 
 # Prints the instructions of function $2 in disassembly $1 that are not
 # one return instruction, alone, with at most a landing pad (endbr64, bti)
-# before it and padding (nop, int3) after it; prints "none" if the function
-# is not in the disassembly or has no return. Prints nothing for a lone
-# return.
+# before it and padding (nop, int3) before or after it (the Windows build
+# of the validation profile emits "nop; ret"); prints "none" if the
+# function is not in the disassembly or has no return. Prints nothing for a
+# lone return.
 not_lone_return () {
   awk -v fn="$2" '
     { sub(/\r$/, "") }
@@ -215,7 +216,7 @@ not_lone_return () {
         sub(/^(data16 |cs |rep |repz )+/, "", m)
         if (!ret && m ~ /^(endbr64|endbr32|bti( [cj]+)?)$/) continue
         if (!ret && m ~ /^ret[lqw]?$/) { ret = 1; continue }
-        if (ret && (m ~ /^nop[wlq]?( |$)/ || m == "int3" || m ~ /^xchg %ax, ?%ax$/)) continue
+        if (m ~ /^nop[wlq]?( |$)/ || m == "int3" || m ~ /^xchg %ax, ?%ax$/) continue
         bad = bad "; " insn[i]
       }
       if (!ret) { print "none"; exit }

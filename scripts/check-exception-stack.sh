@@ -110,8 +110,13 @@
 #             no more than its control in distinct message words
 #             (shipped build against shipped control, injected against
 #             injected); the residue is printed as such.
-# With STRICT_NORMAL=1, ANY canary a hardened build leaves after a normal
-# return fails (exit 3), the B and C residue included.
+# The rule is "fail on any hit" (Matt, 2026-10-17), within the scope of
+# the claim: every frame this crate scrubs (A, A', and the crate's own
+# frames in B and C) must leave none. BLAKE2b's compression frame is
+# outside the claim (another repository), so its residue is measured and
+# capped at the control's, not failed. With STRICT_NORMAL=1, ANY canary a
+# hardened build leaves after a normal return fails (exit 3), that residue
+# included; it stays red until BLAKE2b scrubs its own frame.
 #
 # Task abort (scripts/exception-stack/src/abort_stack.adb, on the shipped
 # sources): the environment task calls Compress over and over in the
