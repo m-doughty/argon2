@@ -17,7 +17,10 @@ arbitrary lower bounds and the input may be empty. Output must contain at
 least one byte; this is H′'s domain, distinct from the complete Argon2
 algorithm's four-byte minimum tag length. Input and output must not overlap;
 SPARK's anti-aliasing rules enforce this for SPARK callers, and ordinary Ada
-callers must respect the same requirement.
+callers must respect the same requirement. The preconditions are
+obligations on the caller, proved for SPARK callers; the `release` profile
+checks none of them, so another caller that breaks one gets no diagnostic
+and undefined behaviour (see the README).
 
 The input is absorbed into BLAKE2b in one piece and is not copied. The BLAKE2b
 state and the two 64-byte chaining values are scratch the caller supplies; the
@@ -27,7 +30,7 @@ storage. This bound excludes the caller's input, output and scratch buffers.
 ## H′: proof obligations
 
 GNATprove 16.1.0 proves the H′ and wipe bodies with the crate's configured
-options (whole-crate proof on 17 October 2026: 3358 checks, none unproved or
+options (whole-crate proof on 17 October 2026: 3398 checks, none unproved or
 justified). There are no `pragma Assume` statements. The source contracts and
 invariants establish:
 
@@ -77,12 +80,16 @@ Compression works in one block of scratch (`Work`) that its caller supplies;
 nothing in `Compress` wipes it (the caller does). `Compress` and
 `Compress_Xor` request the same stack scrubbing and register clearing; for
 them, `scripts/check-h0-object.sh` checks the compiled code for the scrubbing
-clone and for the register clearing at every return. The scrub covers their
-own body's frame, not the frames of helpers the body calls that are not
-inlined. H′ and H₀ likewise take
-their BLAKE2b state, and H′ its two chain values, as scratch parameters, so a
-future cleanup guard can reach them. BLAKE2b's own compression frame stays
-outside any such guard and rests on `blake2b`'s attributes.
+clone, for at least the registers a probe shows `zero_call_used_regs`
+zeroes at each return of the wrapper (within the limits in `TRUST.md` H-1),
+for no helper left out of line, and for no call of `memcpy` or `memmove`
+(the body copies no block through libc). The scrub covers their own body's
+frame, not the frames of helpers the body calls that are not inlined. H′ and
+H₀ likewise take their BLAKE2b state, and H′ its two chain values, as
+scratch parameters, so a future cleanup guard can reach them. BLAKE2b's own
+compression frame stays outside any such guard and outside this crate's
+control: message words left there after a normal return of H′ are
+measured (`TRUST.md` H-2), not removed.
 
 The guarantee is for normal completion with satisfied preconditions.
 This package does not guarantee cleanup after asynchronous interruption,

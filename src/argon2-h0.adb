@@ -337,27 +337,27 @@ is
                  (Blake2b.No_Bytes, Call_C (Pr, P, S, K, X),
                   Call_Pieces (P, S, K, X), Call_Length (P, S, K, X), 64));
 
-   --  Copies and streaming absorption process caller input. Stack
-   --  scrubbing covers their frames, including compiler-created spills.
-   pragma Warnings
-     (GNATprove, Off, "pragma ""Machine_Attribute"" ignored*",
-      Reason => "code-generation attribute: no effect on proof");
-   pragma Machine_Attribute (Store_LE32, "strub", "internal");
-   pragma Machine_Attribute (Store_LE32, "zero_call_used_regs", "all");
-   pragma Machine_Attribute (Copy_Chunk, "strub", "internal");
-   pragma Machine_Attribute (Copy_Chunk, "zero_call_used_regs", "all");
-   pragma Machine_Attribute (Copy_Input, "strub", "internal");
-   pragma Machine_Attribute (Copy_Input, "zero_call_used_regs", "all");
-   pragma Machine_Attribute (Absorb_Field, "strub", "internal");
-   pragma Machine_Attribute (Absorb_Field, "zero_call_used_regs", "all");
-   pragma Machine_Attribute (Absorb_Chunk, "strub", "internal");
-   pragma Machine_Attribute (Absorb_Chunk, "zero_call_used_regs", "all");
-   pragma Machine_Attribute (Absorb_Input, "strub", "internal");
-   pragma Machine_Attribute (Absorb_Input, "zero_call_used_regs", "all");
-   pragma Machine_Attribute (Finish, "strub", "internal");
-   pragma Machine_Attribute (Finish, "zero_call_used_regs", "all");
-   pragma Warnings
-     (GNATprove, On, "pragma ""Machine_Attribute"" ignored*");
+   --  Every helper that handles the password, salt, secret, associated
+   --  data, their lengths, the parameters or the digest is inlined into
+   --  the strub body of Compute (see the private part of the spec), so
+   --  the whole of H0 runs in the one frame that is scrubbed. This is
+   --  GCC's always_inline: a call that cannot be inlined is a compilation
+   --  error, whatever the optimisation level. The procedures the compiler
+   --  generates inside the helpers to check their postconditions (with
+   --  contracts on) cannot be named here; the flatten attribute on
+   --  Compute inlines them, from -O1 up (at -O0 GCC inlines only
+   --  always_inline calls). scripts/check-h0-object.sh checks the result.
+   --  No effect on proof (GNATprove accepts the pragma without a
+   --  warning).
+   pragma Inline_Always (Field_Value);
+   pragma Inline_Always (Input_Length);
+   pragma Inline_Always (Store_LE32);
+   pragma Inline_Always (Copy_Chunk);
+   pragma Inline_Always (Copy_Input);
+   pragma Inline_Always (Absorb_Field);
+   pragma Inline_Always (Absorb_Chunk);
+   pragma Inline_Always (Absorb_Input);
+   pragma Inline_Always (Finish);
 
    procedure Store_LE32 (Value : U32; Bytes : out Blake2b.Byte_Array) is
    begin

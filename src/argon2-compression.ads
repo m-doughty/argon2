@@ -76,13 +76,20 @@ is
                  then M (I) = M'Old (I))));
 
 private
+   --  Hardening (GCC): strub scrubs the stack frame of the body, and
+   --  zero_call_used_regs clears the call-used registers on return.
+   --  flatten inlines every call in the body that can be inlined, so the
+   --  helpers run in that one frame (the body marks its own helpers
+   --  Inline_Always as well).
    pragma Warnings
      (GNATprove, Off, "pragma ""Machine_Attribute"" ignored*",
       Reason => "code-generation attribute: no effect on proof");
    pragma Machine_Attribute (Compress, "strub", "internal");
    pragma Machine_Attribute (Compress, "zero_call_used_regs", "all");
+   pragma Machine_Attribute (Compress, "flatten");
    pragma Machine_Attribute (Compress_Xor, "strub", "internal");
    pragma Machine_Attribute (Compress_Xor, "zero_call_used_regs", "all");
+   pragma Machine_Attribute (Compress_Xor, "flatten");
    pragma Warnings
      (GNATprove, On, "pragma ""Machine_Attribute"" ignored*");
 end Argon2.Compression;

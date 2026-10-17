@@ -102,6 +102,9 @@
 #     register matrix exchanged (the bodies of Consecutive and Strided).
 #     It computes what c-pass-swap computes, through other code, and the
 #     proof catches it elsewhere;
+#   * c-fused-xor-word: the first loop of Combine, which fills the working
+#     block with X xor Y word by word (no block copy), reading word 127 - K
+#     of M (Y) instead of word K (linear index arithmetic, no mod);
 #   * c-final-xor: the final xor with X xor Y omitted (G = P's output);
 #   * c-xor-old-z: Compress_Xor not xoring the old block (it writes G).
 # Shared (the same mistake in Argon2.Compression and in
@@ -188,7 +191,8 @@ MUTANTS=(
   "c-pass-swap|src/argon2-compression.adb|         P (R, Strided (I));\n         pragma Loop_Invariant (Static => R = Model.Columns (Entry_R, I + 1));|         P (R, Consecutive (I));\n         pragma Loop_Invariant (Static => R = Model.Columns (Entry_R, I + 1));|||"
   "c-register-transpose|src/argon2-compression.adb|   function Consecutive (I : Integer) return Model.Positions\n   is ([16 * I,      16 * I + 1,  16 * I + 2,  16 * I + 3,\n        16 * I + 4,  16 * I + 5,  16 * I + 6,  16 * I + 7,\n        16 * I + 8,  16 * I + 9,  16 * I + 10, 16 * I + 11,\n        16 * I + 12, 16 * I + 13, 16 * I + 14, 16 * I + 15])|   function Consecutive (I : Integer) return Model.Positions\n   is ([2 * I,       2 * I + 1,   2 * I + 16,  2 * I + 17,\n        2 * I + 32,  2 * I + 33,  2 * I + 48,  2 * I + 49,\n        2 * I + 64,  2 * I + 65,  2 * I + 80,  2 * I + 81,\n        2 * I + 96,  2 * I + 97,  2 * I + 112, 2 * I + 113])|argon2-compression.adb|PT|argon2-compression.adb:118:VC_POSTCONDITION,argon2-compression.adb:130:VC_POSTCONDITION"
   "c-register-transpose|src/argon2-compression.adb|   function Strided (I : Integer) return Model.Positions\n   is ([2 * I,       2 * I + 1,   2 * I + 16,  2 * I + 17,\n        2 * I + 32,  2 * I + 33,  2 * I + 48,  2 * I + 49,\n        2 * I + 64,  2 * I + 65,  2 * I + 80,  2 * I + 81,\n        2 * I + 96,  2 * I + 97,  2 * I + 112, 2 * I + 113])|   function Strided (I : Integer) return Model.Positions\n   is ([16 * I,      16 * I + 1,  16 * I + 2,  16 * I + 3,\n        16 * I + 4,  16 * I + 5,  16 * I + 6,  16 * I + 7,\n        16 * I + 8,  16 * I + 9,  16 * I + 10, 16 * I + 11,\n        16 * I + 12, 16 * I + 13, 16 * I + 14, 16 * I + 15])|||"
-  "c-final-xor|src/argon2-compression.adb|           xor R (K) xor M (X) (K) xor M (Y) (K);|           xor R (K);|argon2-compression.adb|PT|argon2-compression.adb:305:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:305:VC_LOOP_INVARIANT_PRESERV,argon2-compression.adb:306:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:306:VC_LOOP_INVARIANT_PRESERV,argon2-compression.adb:307:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:307:VC_LOOP_INVARIANT_PRESERV"
+  "c-fused-xor-word|src/argon2-compression.adb|         R (K) := M (X) (K) xor M (Y) (K);|         R (K) := M (X) (K) xor M (Y) (Word_Index'Last - K);|argon2-compression.adb|PT|argon2-compression.adb:356:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:356:VC_LOOP_INVARIANT_PRESERV"
+  "c-final-xor|src/argon2-compression.adb|           xor R (K) xor M (X) (K) xor M (Y) (K);|           xor R (K);|argon2-compression.adb|PT|argon2-compression.adb:294:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:294:VC_LOOP_INVARIANT_PRESERV,argon2-compression.adb:295:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:295:VC_LOOP_INVARIANT_PRESERV,argon2-compression.adb:296:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:296:VC_LOOP_INVARIANT_PRESERV"
   "c-xor-old-z|src/argon2-compression.adb|      Combine (M, X, Y, Z, Accumulate => True, R => Work);|      Combine (M, X, Y, Z, Accumulate => False, R => Work);|argon2-compression.adb|PT|argon2-compression.ads:70:VC_POSTCONDITION,argon2-compression.ads:71:VC_POSTCONDITION"
   # Compression: shared mutants (the same mistake in the code and the
   # static model; the proof must still succeed, the tests must catch them).

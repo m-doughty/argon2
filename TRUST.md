@@ -21,7 +21,7 @@ hardening attributes give and what they do not.
 | Unproved code (`SPARK_Mode => Off`, C or Rust behind it) | none in `src/` | would need one each |
 | Third-party SPARK | blake2b 0.1.1, same maintainer, its own register (D-1) | listed |
 | Trusted definitions | none | would need one each |
-| Warning suppressions | W-1, W-2, W-4 to W-7 (`pragma Warnings`; W-3 retired); see also N-4 | no, each has a recorded `Reason` |
+| Warning suppressions | W-1, W-4, W-6, W-7 (`pragma Warnings`; W-2, W-3 and W-5 retired); see also N-4 | no, each has a recorded `Reason` |
 | Toolchain and proof model | T-1 to T-3 | a bump is a signed change |
 | The specification | S-1 to S-4 | listed |
 | Not proved | H-1 (wiping), H-2 (abnormal exits), H-3 (secrets held outside a future cleanup guard) | listed |
@@ -41,15 +41,27 @@ place, and `--self-test` runs it against known bypasses. The project's
 `--warnings=error` also makes any unexplained proof warning fail the proof.
 
 **What CI runs** (the first run, on 17 October 2026, passed; the
-release-profile test step below, the compression part of the object check and
-the register-parser test were added after it and have not run on CI yet): on
-each of the four platforms the `validation` build (checks and
+release-profile test step below, the compression part of the object check,
+the register-parser test and the exception-stack scan were added after it,
+and the proof-output judge and the register parser have been tightened since,
+none of which has run on CI yet): on
+each of the four platforms the `validation` build (this crate's checks and
 contracts on), the H′, H₀ and compression tests including `--long`, the same
-tests on the `release` build (checks and contracts off; the tests of
-precondition rejection skip themselves there), and `scripts/check-h0-object.sh`; the
-full GNATprove run followed by `scripts/check-proof-output.sh` (and its
-self-test), which fails if a unit was skipped or a check is unproved or
-justified; and, once, `scripts/check-sources.sh` (and its self-test),
+tests on the `release` build (checks and contracts off; the three tests of
+a precondition check skip themselves there, each printing
+`note: skipped (contracts off): <name>`, and the job requires exactly three
+such lines), `scripts/check-h0-object.sh`, and
+`scripts/check-exception-stack.sh` (H-2), a gate on normal returns and a
+measurement of exceptions: exit 1 (a harness error, or a blind
+normal-return control: A′) and exit 3 (a hardened build left canaries
+after a normal return in compression, or more distinct message words than
+its control in H′ and BLAKE2b's frame) fail the job; exception results are
+reported only, and where an exception's control leaves no canary they are
+marked unmeasured and CI prints a warning. BLAKE2b is built in its own
+`release` profile (checks and contracts off) in every one of these builds.
+Also on each platform: the full GNATprove run followed by
+`scripts/check-proof-output.sh --whole-crate` (and its self-test; the README
+says what it rejects). And, once, `scripts/check-sources.sh` (and its self-test),
 `scripts/check-dependency.sh`, `scripts/h0-vectors.py --check`,
 `scripts/h-prime-vectors.py --check`, `scripts/compression-vectors.py --check`,
 the proof-judge self-test and `scripts/test-zeroed-at-return.sh` (the object
@@ -72,10 +84,8 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 | H-1 | Not proved | wipes, register and stack clearing | unsigned |
 | H-2 | Not proved | exceptional and asynchronous exits | unsigned |
 | H-3 | Not proved | the cleanup guard does not exist yet; BLAKE2b's own compression frame will stay outside it | unsigned |
-| W-1 | Warning suppression | `src/argon2-h0.ads` (`Compute`), `Machine_Attribute` | no signature needed |
-| W-2 | Warning suppression | `src/argon2-h0.adb`, `Machine_Attribute` on seven helpers | no signature needed |
-| W-4 | Warning suppression | `src/argon2-h_prime.ads` (`Hash`), `Machine_Attribute` | no signature needed |
-| W-5 | Warning suppression | `src/argon2-h_prime.adb` (`Initial_Hash`), `Machine_Attribute` | no signature needed |
+| W-1 | Warning suppression | `src/argon2-h0.ads` (`Compute`: `strub`, `zero_call_used_regs`, `flatten`), `Machine_Attribute` | no signature needed |
+| W-4 | Warning suppression | `src/argon2-h_prime.ads` (`Hash`: `strub`, `zero_call_used_regs`, `flatten`), `Machine_Attribute` | no signature needed |
 | W-6 | Warning suppression | `src/argon2-wipe.ads` (`Bytes`), `Machine_Attribute` | no signature needed |
 | W-7 | Warning suppression | `src/argon2-compression.ads` (`Compress`, `Compress_Xor`), `Machine_Attribute` | no signature needed |
 
@@ -91,10 +101,19 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   pass the test suite built with run-time checks and contracts on (the
   `validation` profile). The `release` profile builds with optimisation,
   run-time checks off (`-gnatp`) and contracts off, on the grounds that the
-  proof covers every check `-gnatp` removes (true only for the proved units;
-  the BLAKE2b dependency keeps its own release profile). With contracts off
-  the `Executable` postconditions (the cleanup guarantees) are not run in
-  `release`; their proof is unaffected. No optimisation-level matrix or
+  proof covers the run-time checks, and the preconditions as obligations on
+  the caller, which SPARK callers are proved to meet. A caller that is not
+  proved and breaks a precondition (an empty H′ output, an H′ input over
+  1,024 bytes, an H₀ digest that is not 64 bytes, compression indices
+  outside the block array, uninitialised or aliased arguments) gets no
+  diagnostic in `release`, and undefined behaviour (for example, writes
+  outside an array). The three tests of a precondition check run only with
+  contracts on and skip themselves in `release`. With contracts off the
+  `Executable` postconditions (the cleanup guarantees) are not run in
+  `release` either; their proof is unaffected. In both profiles BLAKE2b is
+  compiled in its own `release` profile (Alire's default for a dependency;
+  `scripts/check-exception-stack.sh` names it), with its checks and
+  contracts off, so `validation` turns on this crate's checks only. No optimisation-level matrix or
   build-matrix script exists yet, unlike blake2b; Alire's default
   `development` profile also exists and is not used for any claim. The same
   proof, tests and checks then ran on Linux arm64 and Linux x86_64 in
@@ -108,12 +127,13 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   test vectors, the judge's self-test), the validation and release builds,
   1444 tests, the object check, and the cold whole-crate proof (2750 checks,
   none unproved; 1036 s on arm64, 1888 s on amd64), with the margin and
-  coverage reports as before (costliest condition 2807 of 5000 steps). The
+  coverage reports as before (costliest condition 2807 of 5000 steps on that
+  tree; the 17 October figures are in T-2). The
   long-input tests were not repeated on it. That tree had no compression and
   the older H′ (chunked input). On 17 October 2026, on macOS arm64, the
   current tree (H′ taking a BLAKE2b array of at most 1,024 bytes and proved
   equal to its model, `Argon2.Blocks`, compression and its model) passes 4240
-  tests, the source gate, and a cold whole-crate proof of 3358 checks with none
+  tests, the source gate, and a cold whole-crate proof of 3398 checks with none
   unproved, none
   justified and no unit skipped (`scripts/check-proof-output.sh`); the first
   CI run (17 October 2026) passed the tests and the cold proof on macOS
@@ -129,16 +149,17 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 - **Why believed:** widely used. The crate's proof (`argon2.gpr`, and CI)
   races all three and is limited in steps, not time (`--timeout=0`). On top of
   that, a local script, `scripts/h0-mutants.sh` (the name is old; it covers
-  all six proved units), shows at its baseline that every check of the H₀,
+  the six units of H₀, H′ and compression, models included), shows at its baseline that every check of the H₀,
   H′ and compression units and their models is proved by at least two
   provers each on its own, and that, for each of its conditions, the cheapest
   proof found among the single-prover runs costs no more than half the step
   budget (different conditions of one check may use different provers). Run on
   macOS arm64 on 17 October 2026: no check is proved by fewer than two
   provers; the costliest check is H′'s at 3,613 steps against the limit of
-  5,000 (the budget is 10,000). It also shows that twenty-five mutated
-  programs behave as designed: twelve of H₀, and thirteen of compression
-  (nine whose code is wrong and which the proof and the tests both catch, and
+  5,000 (the budget is 10,000), H₀'s costliest is at 2,763 and compression's
+  at 1,637. It also shows that twenty-six mutated
+  programs behave as designed: twelve of H₀, and fourteen of compression
+  (ten whose code is wrong and which the proof and the tests both catch, and
   four where code and model are wrong in the same way, which still prove, the
   blind spot of S-4, and which the tests catch). Earlier runs: 14 and 15
   October 2026 for H₀, and a baseline on Linux arm64 and x86_64 on 15 October.
@@ -147,9 +168,14 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   all its proof runs (the baseline, the single-prover runs and every mutant)
   also carry a wall-clock timeout (default 300 s) besides the steps, unlike
   the crate's own proof, which has none; and its logs are kept outside the repository (they are gitignored),
-  so the repository itself retains no record of the result. The H′ and wipe
-  checks are held to both gates now. blake2b's units, on which the H₀ proof
-  depends, are not held to the two-prover rule here. The H′ units are set to
+  so the repository itself retains no record of the result. Both gates
+  cover the six units the script lists (`UNITS`): `Argon2.H0`,
+  `Argon2.H_Prime` and `Argon2.Compression`, and their three models.
+  `Argon2.Wipe` (the wipe procedure's body), `Argon2` and `Argon2.Blocks`
+  are proved in the whole-crate run but held to neither gate; the checks at
+  the wipe's calls from H₀ and H′ belong to those units, and those are
+  gated. blake2b's units, on which the H₀ and H′ proofs
+  depend, are not held to either gate here. The H′ units are set to
   10,000 steps per check; their costliest check needs 3,613 steps with the cheapest
   prover, a margin of 2.7 (a check is proved when any one prover proves it
   within the budget).
@@ -320,8 +346,9 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   and seven short and empty inputs), and the same lengths against the vendored
   official Argon2 C reference's `blake2b_long`, with input lengths 0, 1, 72,
   127, 128, 129, 1,023 and 1,024, output lengths from 1 to 1,025, arbitrary
-  bounds, deterministic random inputs, and a test that an input over 1,024
-  bytes is rejected. No test reaches output lengths above 2²⁴ + 8; for those
+  bounds, deterministic random inputs, and a test, run with contracts on
+  only, that the precondition check raises on an input over 1,024 bytes. No
+  test reaches output lengths above 2²⁴ + 8; for those
   the proof is the only evidence, and it is a proof about the model. No mutation
   suite covers H′ yet. Rests on `Blake2b.Spec` being BLAKE2b (S-2, D-1).
 - **If false:** H′ would be proved equal to the wrong function, or differ from
@@ -349,7 +376,7 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 - **Why believed (tested, not proved):** the unmodified reference's
   `fill_block` as oracle (T-4), on the 15 published blocks, every single-word
   position in either input, extreme words, `X` equal to `Y`, pseudo-random
-  pairs, and `Z` equal to `X` or `Y`, in both forms; and thirteen compression
+  pairs, and `Z` equal to `X` or `Y`, in both forms; and fourteen compression
   mutants (see T-2): the tests catch every one, including the four the proof
   cannot see because code and model share the mistake. These runs are local
   and not in CI.
@@ -363,37 +390,73 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   `Argon2.H_Prime.Hash` leave no copy of an input or intermediate digest
   that the library holds in a buffer of its own, in a call-used register
   (callee-saved registers are not zeroed; the ABI restores them), or on the
-  stack. The caller's own arrays are not erased by these calls. For
+  stack, **except what BLAKE2b's own compression leaves in its frame**
+  (H-3), which this crate cannot scrub. For `Hash` that residue is
+  measured (H-2): message words remained on the stack after a normal return
+  in the `release` profile on all three platforms measured, in `validation`
+  on macOS arm64 (1 word) and Linux x86_64 (earlier script); a debugger
+  placed them in the frame of `Blake2b.Core.Compress` on macOS arm64 only,
+  and elsewhere that location is inferred, not shown. `Compute` has not been measured: what its calls of
+  BLAKE2b leave is not known. The caller's own arrays are not erased by
+  these calls. For
   `Argon2.Compression.Compress` and `Compress_Xor` it is narrower: on normal
   return no word derived from the blocks is left in a call-used register or
-  in the stack frame of their own body. `Work` is the caller's to wipe, and
-  the frames of the helpers the body calls are outside it (below).
+  in the stack frame of their body, into which every helper of the unit is
+  inlined. `Work` is the caller's to wipe, and the code the body calls in
+  other units (with checks on only, the run-time's check-failure and
+  exception-propagation routines) is outside it (below).
 - **What is proved:** after `Argon2.Wipe.Bytes`, every byte of the buffer it
   is given is zero. That is about the value of an object only.
 - **What is requested, not proved:** `Wipe.Bytes` is never inlined and is
-  `noipa`, with an `Inspection_Point`; the entry points and the helpers that
-  handle input carry `strub` and `zero_call_used_regs ("all")`, and so do
-  `Compress` and `Compress_Xor`. For H₀ and H′ nothing checks that wipes or
-  scrubbing exist in the object code (blake2b has
-  `scripts/check-hardening.sh`). For compression the attributes are checked in
-  the object code (below), not proved.
+  `noipa`, with an `Inspection_Point`; the entry points `Compute`, `Hash`,
+  `Compress` and `Compress_Xor` carry `strub`, `zero_call_used_regs ("all")`
+  and `flatten`, and the helpers that handle input, chain values or blocks
+  are `Inline_Always`, so each runs in its entry point's scrubbed frame (as
+  described for compression below). The attributes and the inlining are
+  checked in the object code (below), not proved. That the object code
+  calls `Wipe.Bytes` where the source does is not checked (blake2b's
+  `scripts/check-hardening.sh` does that for its own).
 - **Compression's hardening.** `Argon2.Compression` works on blocks of
   workspace data (derived from the password, salt and key) and takes one
   block of working space from its caller (`Work`); it does not wipe `Work`
   (it is the hot loop; the caller does). `strub ("internal")` makes each of
   `Compress` and `Compress_Xor` a wrapper that calls the body (a clone) and
   then scrubs the stack the body's own frame used; `zero_call_used_regs
-  ("all")` zeroes every call-used register before the wrapper returns. The
-  helpers the body calls and that are not inlined are not `strub` functions,
-  and GCC does not scrub their frames: on macOS arm64 the release body calls
-  `memcpy`, `Row_Pass` and `Column_Pass` (whose frames hold saved registers
-  and the return address; they call `GB`, which uses no stack), and the
-  validation body ends in a tail call to `Combine`, so there the whole
-  computation runs outside the scrubbed frame. What those frames hold has not
-  been examined further, nor on other targets. No claim is made about them.
+  ("all")` zeroes every call-used register before the wrapper returns. GCC
+  scrubs only the frame of the `strub` body itself, not the frames of
+  functions it calls, so every helper of `src/argon2-compression.adb` that
+  handles block words (`FBlaMka`, `GB`, `Consecutive`, `Strided`, `P`,
+  `Row_Pass`, `Column_Pass`, `Permute`, `Store_G`, `Combine`) is
+  `Inline_Always` (GCC's `always_inline`: a call it cannot inline is a
+  compilation error). With contracts on, GNAT checks the postconditions of
+  `Store_G` and `Combine` by moving their statements into procedures it
+  generates, which no pragma can name; `flatten` on `Compress` and
+  `Compress_Xor` inlines them, and every other call that can be inlined.
+  Unlike `Inline_Always`, `flatten` raises no error when it cannot inline a
+  call, and GCC does not apply it at `-O0` (both profiles build at `-O3`; a
+  `validation` build at `-O0` leaves those procedures, and others GNAT
+  generates for the checks, out of line, and the object check fails on
+  them). The whole computation then runs in the scrubbed
+  frame: on macOS arm64 (17 October 2026) the `release` and `validation`
+  objects define no function but the two wrappers and their clones. The body
+  copies no block through libc: the first loop of `Combine` writes each word
+  of `Work` straight from the two inputs (`R (K) := M (X) (K) xor M (Y) (K)`),
+  where a block assignment (`R := M (X)`, as the body once had) is a call of
+  libc's `memcpy`, outside the scrubbed frame (an iterated aggregate, tried
+  instead of the loop, is one too: GCC builds it in a temporary and copies
+  it). On macOS arm64 (17 October 2026) neither object references `memcpy`
+  or `memmove`, and the `release` object references no other unit at all. With checks on, the `validation`
+  object calls the run-time routines that raise an exception when a check
+  fails (`__gnat_rcheck_CE_Invalid_Data`, `__gnat_rcheck_CE_Range_Check`,
+  `system__assertions__raise_assert_failure`) and the unwinder's
+  (`_Unwind_Resume`, `__gnat_personality_v0`), outside the scrubbed frame,
+  only when a check fails, which the proof says never happens; their
+  arguments are a source location, a message or the exception, not block
+  data, and an exit through them is H-2's.
 - **What is checked in the objects, and what is not:** `scripts/check-h0-object.sh`
-  looks for proof residue and runtime cleanup: it requires `Compute` and
-  `Hash` to be defined text symbols (not merely named), scans `argon2-h0.o`
+  looks for proof residue and runtime cleanup: it requires `Compute`,
+  `Hash`, `Compress` and `Compress_Xor` to be defined text symbols (not
+  merely named), scans `argon2-h0.o`
   for soft-links, abort-deferral, secondary-stack, big-integer, model and
   theory symbols by name (any symbol, defined or referenced, whose name
   contains one), scans `argon2-h_prime.o` for soft-links, abort-deferral,
@@ -403,35 +466,209 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   the external symbols (`nm -g`) of `argon2-h0_model.o` and
   `argon2-h_prime_model.o` are only their elaboration flag. That is a check on static ghost code having left nothing
   behind (see N-2), not on wiping, and it looks at symbol names, not at the
-  code. For `argon2-compression.o`, in both the `release` and the
-  `validation` objects, it also reads the code: `Compress` and `Compress_Xor`
-  must be defined text symbols with a `strub` clone each
-  (`<name>.strub.<n>`), and at every return of each of the two, the
-  instructions after the last call or branch must zero at least the registers
-  that `zero_call_used_regs ("all")` zeroes on the target. That set is
+  code. For `argon2-h0.o`, `argon2-h_prime.o` and `argon2-compression.o`, in
+  both the `release` and the `validation` objects, it also reads the code,
+  the same check for each: the entry points (`Compute`; `Hash`; `Compress`
+  and `Compress_Xor`) must be defined text symbols with a `strub` clone each
+  (`<name>.strub.<n>`), and at each return of the wrapper, at least the
+  registers a probe shows `zero_call_used_regs ("all")` zeroes must hold
+  zero, within the parser's limits below. That set is
   measured, not written down: the script compiles a probe function with the
   attribute with the toolchain's `gcc` and disassembles it (on macOS arm64,
-  `x0`–`x17` and `v0`–`v7`, `v16`–`v31`). It scans the object's symbols for
+  `x0`–`x17` and `v0`–`v7`, `v16`–`v31`). The parser
+  (`scripts/zeroed-at-return.awk`, 30 tests in
+  `scripts/test-zeroed-at-return.sh`) counts a register as zeroed at a
+  return only if it is zeroed after the last call, branch or branch target
+  before that return and not written again (in any view of it); an 8- or
+  16-bit x86 clear does not count, since it leaves the upper bits. A cold part
+  of a wrapper (`<name>.cold`) that returns is checked at its returns like
+  the wrapper; the clone, and its cold part, are not checked on their own
+  (they return into the wrapper). Its limits: it reads symbol names and
+  instructions only; a jump from a cold part back into its hot function is
+  invisible in a `.o` file (the target is a relocation), so such a path is
+  not seen; and it is a linear scan, not a proof about control flow. It
+  also requires that the object
+  define no function but the entry-point wrappers, their clones and GCC's
+  cold parts of either (`<name>.cold`, code of the same function): a helper
+  left out of line fails the check by name, unless it is hardened itself (its own
+  `strub` clone, and the registers zeroed at each of its returns). It fails
+  if the object references `memcpy` or `memmove` (or their `_chk` forms),
+  naming them; a copy of the crate with `R := M (X)` restored fails it in
+  both profiles, naming `memcpy` (macOS arm64, 17 October 2026). For H₀ the
+  one function allowed outside the scrubbed bodies is GNAT's initialisation
+  procedure for the body's `Parameters` record, `argon2__h0__parametersIP`,
+  and only while its code is a single return. H₀ copies each input into a
+  local chunk by a byte loop; at `-O3` GCC turns that loop into a `memcpy`
+  call, so `argon2.gpr` compiles `argon2-h0.adb` with
+  `-fno-tree-loop-distribute-patterns` (without it the `release` object
+  references `memcpy` and the check fails). It lists, without checking them,
+  the other symbols the object references in other units.
+  It scans the object's symbols for
   the same names as `argon2-h0.o` (soft-links, abort deferral, the secondary
   stack, big integers, models, theory), and checks that `argon2-compression_model.o`
   holds only its elaboration flag and the initialisation procedure of the type
-  `Positions` (N-5). It does not check how much stack is scrubbed, nor the
-  helpers' frames, nor `Work`.
+  `Positions` (N-5). It does not check how much stack is scrubbed, nor what
+  the run-time leaves, nor `Work`.
 - **If false:** key- or password-derived bytes could remain in memory the
   library no longer controls.
 - **Scope:** macOS arm64, Linux arm64 and Linux x86_64 so far (the object check
   ran in the containers on 14 and 15 October 2026, the last time on the renamed crate); Windows x86_64 and the
   compilers and targets of CI, whose first run passed it on all four platforms (T-1). The
-  compression part of the object check has run on macOS arm64 only (17 October
-  2026: GCC 16.1.0, Apple's LLVM objdump); CI runs it on the other three
-  platforms and has not run it yet. See also H-2.
+  part of the object check that reads the code (H₀, H′ and compression) has
+  run on macOS arm64 only (17 October 2026: GCC 16.1.0, Apple's LLVM
+  objdump); CI runs it on the other three platforms and has not run it yet.
+  See also H-2.
 
 ### H-2 Exceptional and asynchronous exits
 - **Proposition:** none is made. The wipes run on normal completion with the
   preconditions met. An exception, a task abort or a stack overflow in the
   middle of `Compute` or `Hash` leaves whatever the buffers held; no handler
-  wipes them (the sources contain no exception handler). Nothing has examined
-  the behaviour on such exits.
+  wipes them (the sources contain no exception handler). What an exception
+  leaves on the stack has been measured, below; nothing is claimed beyond
+  that measurement. The same scan gates what a normal return leaves (below).
+- **What is scanned, and on what code:** `scripts/check-exception-stack.sh`
+  (see its header), on copies of the sources and of the BLAKE2b release
+  Alire deployed, built in both profiles (BLAKE2b in its `release` profile,
+  as the tests build it), never `src/` itself. Three kinds of build: the
+  shipped sources (normal returns); copies with ONE statement inserted per
+  case, `if <trigger> then raise Program_Error; end if;` (the raise, and the
+  normal return of the same build, since the line can change the code
+  around it); and, for compression, a copy that spills 32 permuted words
+  (256 bytes) into a local array of volatile components in `Store_G` (case
+  A′, no raise). Case A: in
+  `Argon2.Compression.Store_G`, after the permutation of `M (X) xor M (Y)`,
+  firing when `Z = 2`. Case B: in `Argon2.H_Prime.Initial_Hash` (inlined into
+  `Hash`'s scrubbed body), after `Blake2b.Hashing.Update (S, Input)`, firing when
+  `Input'First = 1`. Case C: in `Blake2b.Core.Compress` after round 6 of 12,
+  firing on the last block of a 1,024-byte message, that is during `Final`,
+  called from `Hash`. The inputs hold known 64-bit canaries (for A, the words
+  of `M (X)`, `M (Y)`, their xor and its permutation, the last computed by an
+  independent transcription checked against the library's output; for B and
+  C, the words of the message BLAKE2b compresses), all on the heap. A driver
+  zeroes the stack below one frame, makes the call there through a frame
+  holding an unused 8 KiB spacer (so that the handler's own run-time calls do
+  not overwrite what the call left), catches any exception, and counts the
+  canaries in the stack it zeroed (24 KiB, doubled when needed), five
+  processes per build. Each build has a **control**, the same copy with
+  `strub` and `zero_call_used_regs` removed from both crates. Hits are
+  counted per 8-byte position (aligned or not); the distinct words found are
+  given in brackets (for B and C, message words only: a hit on an input word
+  that straddles two adjacent message words repeats their bytes). The probe
+  recognises selected complete 64-bit words only: a partial word, a word in
+  another form, or any other value is not seen.
+- **What is gated, and what is reported:** exit 1 (a harness error, or a
+  blind normal-return control: A′'s control must leave its spilled words,
+  32 of 32 on macOS arm64, and the hardened build none, `strub` scrubbing
+  them) and exit 3 (a hardened build left canaries after a normal return in
+  compression, A or A′, or more distinct message words than its control in
+  H′ and BLAKE2b's frame, B and C, comparing builds of the same kind) fail
+  the script and CI's job. For B and C, where control and hardened build
+  both leave none, the result passes as "not discriminating". Exception
+  results are reported only; where an exception's control leaves no canary
+  they are marked unmeasured and CI prints a warning. `STRICT_NORMAL=1`
+  fails on any hardened hit after a normal return, the BLAKE2b residue
+  included; CI does not set it.
+- **What GCC emits for an exceptional exit** (the injected copies' objects,
+  macOS arm64): once the body can raise, the `strub` wrapper gets a cleanup
+  that zeroes the body's frame (from the watermark to the wrapper's stack
+  pointer, as on a normal return) and then resumes the propagation
+  (`_Unwind_Resume`). The frames below the body's, those of the run-time's
+  raise routines and of the unwinder, are not zeroed, and the registers are
+  not cleared on that path (`zero_call_used_regs` acts at returns).
+- **Results, macOS arm64** (17 October 2026, GCC 16.1.0, natively; two
+  runs of the present script, five processes each, 24 KiB region; control /
+  hardened, hits (distinct words); a range is the spread over the
+  processes):
+
+  | Case | Profile | Exception | Normal, injected build | Normal, shipped sources |
+  |---|---|---|---|---|
+  | A | release | 14 (8) / 10–12 (8) | 0 / 0 | 0 / 0 |
+  | A | validation | 5–6 (4) / 6 (4) | 0 / 0 | 0 / 0 |
+  | A′ (spill) | both | no raise | 32 (32) / 0 | not applicable |
+  | B | release | 2 (2) / 3 (2) | 1 (1) / 1 (1) | 1 (1) / 1 (1) |
+  | B | validation | 2 (2) / 3 (2) | 1 (1) / 1 (1) | 1 (1) / 1 (1) |
+  | C | release | 5 (5) / 5 (5) | 1 (1) / 1 (1) | 1 (1) / 1 (1) |
+  | C | validation | 5 (5) / 5 (5) | 1 (1) / 1 (1) | 1 (1) / 1 (1) |
+
+  **Results, Linux, from the earlier version of the script** (17 October
+  2026, in containers: aarch64 natively on Apple silicon, x86_64 emulated;
+  that version had no shipped-sources build, no A′, and one control for both
+  modes; raise / normal return of the injected build, hits (distinct
+  words)):
+
+  | Platform | Case | Profile | Control | Hardened |
+  |---|---|---|---|---|
+  | Linux aarch64 | A | both | 5 (5) / 0 | 0 / 0 |
+  | Linux aarch64 | B, C | release | 14 (4) / 4 (4) | 0 / 4 (4) |
+  | Linux aarch64 | B, C | validation | 14 (4) / 0 | 0 / 0 |
+  | Linux x86_64 | A | release | blind: 0 / 0 | not measured |
+  | Linux x86_64 | A | validation | 1 (1) / 0 | 0 / 0 |
+  | Linux x86_64 | B, C | release | blind: 0 / 16–17 (10–11) | not measured; 0 / 19 (11) |
+  | Linux x86_64 | B, C | validation | blind: 0 / 8 (6) | not measured; 0 / 10 (6) |
+
+  Both with the pinned toolchain; macOS arm64 is the only platform measured
+  with the present script. On macOS the hardened builds leave about what the unhardened ones leave after an
+  exception: in A, words of the xor (each the low half of a vector register
+  at the raise, consistent with the unwinder saving the floating-point
+  registers) and permuted words (held in callee-saved registers), in the
+  run-time's and the unwinder's frames below the scrubbed one; in B and C, message words in
+  the frame of `Blake2b.Core.Compress`, which is not hardened itself (its
+  callers' `strub` scrubs only their own frames). On Linux aarch64 the
+  hardened builds left none after the raise in any case; the measurement
+  does not tell whether the scrub or the propagation's own frames (resumed
+  from the wrapper's frame, so written over the stack below it) removed
+  them. On Linux x86_64 the exception's propagation overwrote the stack the
+  call had used, in the controls as in the hardened builds (for H′, GNAT
+  generates a cleanup in `Initial_Hash`, to release the secondary stack,
+  which now sits in `Hash`'s clone and resumes the propagation from that
+  frame), so B, C and A in
+  `release` were blind there; the present script would mark those exception
+  results unmeasured (a warning, not a failure), and whether A′ sees its
+  spill there is not known yet. On macOS the first process after a build
+  sometimes left fewer hits in B's `validation` build (1 instead of 2 or 3).
+- **Normal returns (gated):** for compression, no selected canary words were
+  detected after a normal return of the hardened `Compress` (macOS arm64,
+  both profiles, shipped and injected builds), and A′ shows that the scan
+  sees words an unhardened build leaves in the body's frame (32 of 32) and
+  that `strub` removes them in the hardened one. That is not complete
+  erasure: the probe recognises selected complete 64-bit words only. The
+  earlier script also found none on Linux aarch64, and on Linux x86_64 in
+  `validation`, but had no A′, so there that is not a measurement. After a normal return of the hardened `Hash`, message
+  words remained on the stack: on macOS arm64, 1 in each profile, in the
+  shipped and the injected build, as many as the control's (the final
+  script; before `Rehash` and `Initial_Hash` were inlined into `Hash` it
+  was 2 in `release` and none in `validation`); and, with the earlier
+  script, in `release` 4 on Linux aarch64 and 11 on Linux x86_64, in
+  `validation` none on Linux aarch64 and 6 on Linux x86_64. A debugger
+  placed them in the frame of
+  `Blake2b.Core.Compress` on macOS arm64 (in the build before that
+  inlining; the word's depth, about 8.9 KiB below the helper frame, is the
+  same in the final one); elsewhere that is inferred. That
+  is BLAKE2b's compression frame, which H-3 lists as outside any guard;
+  H-1's proposition for `Hash` does not hold for it, and the gate only
+  bounds it by the control's count.
+- **Task abort: not measured.** In each of the three platforms and both
+  profiles, an asynchronous select around a loop of `Compress` (the shipped
+  sources, no injected line) was never interrupted before the loop ended by
+  itself (0 of 3 trials, control and hardened). GNAT's run-time with
+  zero-cost exceptions does not abort asynchronously (the abort signal's
+  handler, `Abort_Handler` in `System.Task_Primitives.Operations`, returns at
+  once), so an abort completes at the next abort completion point, and the
+  hardened subprograms contain none. Incidentally, the stack held canaries
+  (0 to 8 per trial in the recorded runs, mostly 4 to 6) after the trials
+  whose delay expired during the loop, and none after those whose delay
+  never expired: consistent with the abort signal's
+  frame (the interrupted registers) being pushed below the scrubbed one; not
+  examined further, and not a claim.
+- **Not covered:** Linux aarch64 and x86_64 with the present script, and
+  Windows x86_64 with any version of it, until CI runs it; H₀ (`Compute`) and `Compress_Xor`;
+  other raise points, inputs and lengths; values other than the selected
+  canary words, and partial words; the registers themselves; signals, stack
+  overflow (`Storage_Error`), and the exits the proof rules out (a failed
+  check). On x86-64 Linux, a leaf `strub` clone may use the 128-byte red
+  zone below its stack pointer; whether GCC's watermark, and so the scrub,
+  covers it is shown neither by the arm64 measurement nor by the object
+  check, which reads symbols and instructions, not stack extents.
 - **If false (if cleanup were expected):** secrets remain after an abnormal
   exit. The cleanup mechanism is a separate design, not part of this crate yet.
 - **Scope:** every call.
@@ -448,30 +685,39 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   does not wipe `Work`, the caller does.
 - **What stays outside any guard:** the working vector and message words that
   `Blake2b.Core.Compress` keeps in its own locals (`M`, `V`). Only `blake2b`
-  itself could change that. They rest on `blake2b`'s own `strub` and
-  `zero_call_used_regs` attributes and its hardening check (its H-1), not on
-  this crate.
+  itself could change that, and nothing in this crate covers it: H-2
+  measured message words left on the stack after a normal return of `Hash`
+  in `release` (on macOS arm64 a debugger placed them in that frame), so
+  whatever `blake2b`'s own attributes and hardening check (its H-1) cover,
+  they do not remove these words in this crate's builds. The residue is
+  measured, not covered, and outside this crate's control.
 - **What is requested, not proved:** stack scrubbing and register clearing
   by compiler attributes (`strub`, `zero_call_used_regs`), which are not
-  proved. For compression they are checked in the object code; for H₀ and H′
-  they are not yet gated here (H-1). The frames of compression's helpers are
-  not scrubbed (H-1).
+  proved. For H₀, H′ and compression they are checked in the object code
+  (H-1), on macOS arm64 so far. Their helpers are inlined into the entry
+  point's scrubbed frame, and none copies data through libc (H-1).
 - **If false:** after an abnormal exit (H-2), or if a scrub is not emitted,
   bytes derived from the password or key can remain in stack memory the library
   no longer controls.
 - **Scope:** the future public calls; today, `Argon2.H_Prime.Hash`,
   `Argon2.H0.Compute` and `Argon2.Compression`.
 
-### W-1, W-2, W-4 to W-7 `Machine_Attribute` ignored
-- **W-1, W-2, W-4, W-5, W-6, W-7** (`Machine_Attribute` ignored by GNATprove):
-  `src/argon2-h0.ads` (`Compute`); `src/argon2-h0.adb` (`Store_LE32`,
-  `Copy_Chunk`, `Copy_Input`, `Absorb_Field`, `Absorb_Chunk`, `Absorb_Input`,
-  `Finish`); `src/argon2-h_prime.ads` (`Hash`); `src/argon2-h_prime.adb`
-  (`Initial_Hash`); `src/argon2-wipe.ads` (`Bytes`);
-  `src/argon2-compression.ads` (`Compress`, `Compress_Xor`).
+### W-1, W-4, W-6, W-7 `Machine_Attribute` ignored
+- **W-1, W-4, W-6, W-7** (`Machine_Attribute` ignored by GNATprove):
+  `src/argon2-h0.ads` (`Compute`: `strub`, `zero_call_used_regs` and
+  `flatten`); `src/argon2-h_prime.ads` (`Hash`: the same three);
+  `src/argon2-wipe.ads` (`Bytes`: `noipa`); `src/argon2-compression.ads`
+  (`Compress`, `Compress_Xor`: the same three as `Compute`). `Inline_Always`
+  on the helpers of H₀, H′ and compression is a pragma GNATprove accepts
+  without a warning; it needs no row.
   **Reason recorded:** "code-generation attribute: no effect on proof".
   GNATprove ignores the attribute, which is correct: it affects code
   generation only.
+- **W-2** (`src/argon2-h0.adb`, `strub` and `zero_call_used_regs` on seven
+  helpers) and **W-5** (`src/argon2-h_prime.adb`, the same on
+  `Initial_Hash`) were retired when those helpers became `Inline_Always`,
+  inlined into the hardened entry point: the attributes, and the
+  suppressions with them, are gone from the bodies.
 - **W-3** was retired when `Argon2.H0.Compute`'s BLAKE2b state became a
   formal (`Hash_State`): the unused-state warning no longer arises and the
   suppression is gone from `src/argon2-h0.adb`.
@@ -481,13 +727,19 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   `Fields_Of`, `H0_Contents` and `Chunk_At` (`src/argon2-h0_model.ads`) hide
   an expression function's body from the provers. Each is reopened by
   `Unhide_Info` in a lemma that GNATprove proves, so they are proof
-  engineering, not assumptions. `Logical_Equal` is blake2b's, checked there.
-  The same holds for compression: `Hide_Info` on `FBlaMka`, `GB` and `P`
-  (`src/argon2-compression_model.ads`) hide a function's body from the provers,
-  and each is reopened by `Unhide_Info` in the compression body where GNATprove
-  proves it; `Logical_Equal` on `Same_Block` and `Same_Positions`
-  (`src/argon2-compression.adb`) makes the provers substitute array equality,
-  and lemmas convert it to ordinary equality. Proof engineering, not
+  engineering, not assumptions. The same holds for compression: `Hide_Info`
+  on `FBlaMka`, `GB` and `P` (`src/argon2-compression_model.ads`) hide a
+  function's body from the provers, and each is reopened by `Unhide_Info` in
+  the compression body where GNATprove proves it. `Logical_Equal` on
+  `Same_Block` and `Same_Positions` (`src/argon2-compression.adb`) and on
+  `Same` (`src/argon2-h_prime.adb`) lets the provers substitute equal
+  arrays into opaque functions, and null-body lemmas convert array equality
+  into it. These are expression functions whose bodies GNATprove sees, so it
+  emits a check, at each annotation, that the body is the logical equality
+  (reported as an inline check), and proves it, as it proves the lemmas'
+  postconditions; blake2b's own `Logical_Equal` functions (`Same_Context`,
+  which the H₀ proof uses, D-1) are checked the same way in its units, which
+  this crate's whole-crate run also analyses. Proof engineering, not
   assumptions. In `Argon2.H_Prime`, `Hide_Info` on `Prefix_Done` (in `Hash`) and
   on `Blake2b.Spec.Incremental.Update` (in `Initial_Hash`) are local: they only
   stop the provers unfolding a definition, and two null-body ghost lemmas
@@ -527,8 +779,6 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
     machine-checked link from this one;
   - an object-code hardening gate for `Compute` and `Hash` (compression's
     is in `scripts/check-h0-object.sh`);
-  - the frames of compression's helpers, which `strub` does not scrub (H-1):
-    whether to harden them, and what they hold;
   - keeping the mutation and coverage logs where the repository, not a
     gitignored directory, holds them, or running the suite in CI;
   - `Lemma_Room` comes from a blake2b example unit,

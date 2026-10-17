@@ -15,6 +15,15 @@ project Argon2 is
       for Default_Switches ("Ada") use
         Argon2_Config.Ada_Compiler_Switches &
         ("-gnatW8", "-gnatwa", "-gnatw.X", "-gnatwe");
+      --  H0 copies each input into a local chunk with a byte loop. At -O3
+      --  GCC turns that loop into a call of memcpy, which would copy the
+      --  password, salt, secret and associated data through libc, outside
+      --  the scrubbed frame of Argon2.H0.Compute
+      --  (scripts/check-h0-object.sh fails on it).
+      for Switches ("argon2-h0.adb") use
+        Argon2_Config.Ada_Compiler_Switches &
+        ("-gnatW8", "-gnatwa", "-gnatw.X", "-gnatwe",
+         "-fno-tree-loop-distribute-patterns");
    end Compiler;
 
    package Binder is
@@ -37,7 +46,7 @@ project Argon2 is
       for Proof_Switches ("argon2-h0_model.adb") use ("--steps=10000");
       for Proof_Switches ("argon2-h0.adb") use ("--steps=10000");
       --  The same for compression and its model: every check proves in
-      --  2400 steps with its cheapest prover, so 10000 leaves a fourfold
+      --  1637 steps with its cheapest prover, so 10000 leaves a sixfold
       --  margin (a check is proved when any one prover proves it within
       --  the budget).
       for Proof_Switches ("argon2-compression.adb") use ("--steps=10000");

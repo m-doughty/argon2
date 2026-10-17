@@ -145,13 +145,19 @@ procedure Test_Main is
       Check (Actual = Expected, "distinct regions preserve order and tail");
    end Input_Order;
 
+   --  A test of precondition rejection skipped because contracts are off
+   --  prints this one line (CI counts them in the release profile).
+   procedure Skipped (Name : String) is
+   begin
+      Put_Line ("note: skipped (contracts off): " & Name);
+   end Skipped;
+
    procedure Empty_Output_Rejected is
       Input : constant Blake2b.Byte_Array := [1, 2, 3];
       Empty : Byte_Array (Byte_Index'Last .. Byte_Index'Last - 1);
    begin
       if not Contracts_On then
-         Put_Line ("note: contracts are off in this profile; " &
-                   "precondition rejection not tested");
+         Skipped ("Empty_Output_Rejected");
          return;
       end if;
       Run_H_Prime (Input, Empty);
@@ -169,6 +175,7 @@ procedure Test_Main is
       Output : Byte_Array (0 .. 31);
    begin
       if not Contracts_On then
+         Skipped ("Oversized_Input_Rejected");
          return;
       end if;
       Run_H_Prime (Input, Output);

@@ -212,16 +212,6 @@ is
            Static     =>
              Digest = Blake2b.Spec.Hash (V, Blake2b.No_Bytes, Digest'Length));
 
-   --  Streaming absorption processes caller input. Stack scrubbing covers
-   --  its frame, including compiler-created spills.
-   pragma Warnings
-     (GNATprove, Off, "pragma ""Machine_Attribute"" ignored*",
-      Reason => "code-generation attribute: no effect on proof");
-   pragma Machine_Attribute (Initial_Hash, "strub", "internal");
-   pragma Machine_Attribute (Initial_Hash, "zero_call_used_regs", "all");
-   pragma Warnings
-     (GNATprove, On, "pragma ""Machine_Attribute"" ignored*");
-
    procedure Initial_Hash
      (S : out Blake2b.Hashing.State;
       Input : Blake2b.Byte_Array; Output_Length : Length;
@@ -359,6 +349,23 @@ is
                  = Model.Out_Byte (Input, T, Q)));
       end loop;
    end Copy_Tail;
+
+   --  Every helper that handles input or chain-value bytes is inlined into
+   --  the strub body of Hash (see the private part of the spec), so the
+   --  whole of H' runs in the one frame that is scrubbed. This is GCC's
+   --  always_inline: a call that cannot be inlined is a compilation error,
+   --  whatever the optimisation level. The procedures the compiler
+   --  generates inside Initial_Hash and Rehash to check their
+   --  postconditions (with contracts on) cannot be named here; the flatten
+   --  attribute on Hash inlines them, from -O1 up (at -O0 GCC inlines only
+   --  always_inline calls). scripts/check-h0-object.sh checks the result.
+   --  No effect on proof.
+   pragma Inline_Always (LE32);
+   pragma Inline_Always (Initial_Hash);
+   pragma Inline_Always (Rehash);
+   pragma Inline_Always (Copy_Short);
+   pragma Inline_Always (Copy_Piece);
+   pragma Inline_Always (Copy_Tail);
 
    procedure Hash
      (Input  : Blake2b.Byte_Array;

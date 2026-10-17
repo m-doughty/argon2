@@ -443,6 +443,9 @@ package body H0_Tests is
               (One, One, One, One, Params (0), Params (1), Params (2),
                Params (3), Params (4), Params (5), Short);
             Check (False, "a 32-byte digest must fail the precondition");
+         else
+            Put_Line ("note: skipped (contracts off): "
+                      & "Digest_Bounds (rejection of a 32-byte digest)");
          end if;
       exception
          when Ada.Assertions.Assertion_Error =>

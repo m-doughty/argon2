@@ -55,11 +55,17 @@ is
                   Password, Salt, Secret, Associated_Data));
 
 private
+   --  Hardening (GCC): strub scrubs the stack frame of the body, and
+   --  zero_call_used_regs clears the call-used registers on return.
+   --  flatten inlines every call in the body that can be inlined, so the
+   --  helpers run in that one frame (the body marks its own helpers
+   --  Inline_Always as well).
    pragma Warnings
      (GNATprove, Off, "pragma ""Machine_Attribute"" ignored*",
       Reason => "code-generation attribute: no effect on proof");
    pragma Machine_Attribute (Compute, "strub", "internal");
    pragma Machine_Attribute (Compute, "zero_call_used_regs", "all");
+   pragma Machine_Attribute (Compute, "flatten");
    pragma Warnings
      (GNATprove, On, "pragma ""Machine_Attribute"" ignored*");
 end Argon2.H0;

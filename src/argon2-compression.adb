@@ -236,21 +236,23 @@ is
       Column_Pass (R);
    end Permute;
 
-   --  With Accumulate False: M (Z) := G (M (X), M (Y)); with it True:
-   --  M (Z) := M (Z) xor G (M (X), M (Y)). G (X, Y) is Permute (R) xor R,
-   --  where R = X xor Y; the first R is kept in the working block, and the
-   --  final loop recomputes word K of it from M (X) and M (Y) rather than
-   --  keeping a second block. Word K of M (Z) is written after word K of
-   --  M (X), M (Y) and M (Z) has been read and before no later step reads
-   --  it, so Z may be X or Y.
-   procedure Combine
+   --  The second half of Combine (below), once R holds M (X) xor M (Y): with
+   --  Accumulate False, M (Z) := Permute (R) xor R; with it True,
+   --  M (Z) := M (Z) xor Permute (R) xor R. The first R is kept in the
+   --  working block, and the final loop recomputes word K of it from M (X)
+   --  and M (Y) rather than keeping a second block. Word K of M (Z) is
+   --  written after word K of M (X), M (Y) and M (Z) has been read and
+   --  before no later step reads it, so Z may be X or Y.
+   procedure Store_G
      (M : in out Block_Array; X, Y, Z : Block_Index; Accumulate : Boolean;
-      R : out Block)
+      R : in out Block)
    with Relaxed_Initialization => M,
         Pre =>
-          X in M'Range and then Y in M'Range and then Z in M'Range
-          and then M (X)'Initialized and then M (Y)'Initialized
-          and then (if Accumulate then M (Z)'Initialized),
+          (Executable =>
+             X in M'Range and then Y in M'Range and then Z in M'Range
+             and then M (X)'Initialized and then M (Y)'Initialized
+             and then (if Accumulate then M (Z)'Initialized),
+           Static     => Same_Block (R, Model.Xor_Blocks (M (X), M (Y)))),
         Post =>
           (Executable =>
              (for all I in M'Range =>
@@ -275,19 +277,6 @@ is
         (if Accumulate then Model.G_Xor (X0, Y0, Z0) else Model.G (X0, Y0))
       with Ghost => Static;
    begin
-      R := M (X);
-      for K in Word_Index loop
-         R (K) := R (K) xor M (Y) (K);
-         pragma Loop_Invariant
-           (Static =>
-              (for all J in Word_Index range 0 .. K =>
-                 R (J) = (X0 (J) xor Y0 (J))));
-         pragma Loop_Invariant
-           (Static =>
-              (for all J in Word_Index range K + 1 .. Word_Index'Last =>
-                 R (J) = X0 (J)));
-      end loop;
-
       Lemma_Same_Block (R, Model.Xor_Blocks (X0, Y0));
       Permute (R);
 
@@ -318,7 +307,79 @@ is
                  (if I /= Z and then M'Loop_Entry (I)'Initialized
                   then M (I) = M'Loop_Entry (I))));
       end loop;
+   end Store_G;
+
+   --  With Accumulate False: M (Z) := G (M (X), M (Y)); with it True:
+   --  M (Z) := M (Z) xor G (M (X), M (Y)). G (X, Y) is Permute (R) xor R,
+   --  where R = X xor Y. The first loop writes each word of R straight
+   --  from M (X) and M (Y), never copying a whole block: GCC lowers a
+   --  block assignment to a call of memcpy, which would run outside the
+   --  scrubbed frame. Flow analysis does not see a loop that also reads R
+   --  in its invariant as initialising all of R, so R has relaxed
+   --  initialisation here and the proof shows it initialised word by word;
+   --  the rest is in Store_G, where R is an ordinary block (relaxed, it
+   --  made the proof of the final loop dearer).
+   procedure Combine
+     (M : in out Block_Array; X, Y, Z : Block_Index; Accumulate : Boolean;
+      R : out Block)
+   with Relaxed_Initialization => (M, R),
+        Pre =>
+          X in M'Range and then Y in M'Range and then Z in M'Range
+          and then M (X)'Initialized and then M (Y)'Initialized
+          and then (if Accumulate then M (Z)'Initialized),
+        Post =>
+          (Executable =>
+             R'Initialized
+             and then
+             (for all I in M'Range =>
+                (if (I = Z and then not Accumulate)
+                    or else M'Old (I)'Initialized
+                 then M (I)'Initialized)),
+           Static     =>
+             M (Z)
+             = (if Accumulate
+                then Model.G_Xor (M'Old (X), M'Old (Y), M'Old (Z))
+                else Model.G (M'Old (X), M'Old (Y)))
+             and then
+             (for all I in M'Range =>
+                (if I /= Z and then M'Old (I)'Initialized
+                 then M (I) = M'Old (I))))
+   is
+   begin
+      for K in Word_Index loop
+         R (K) := M (X) (K) xor M (Y) (K);
+         pragma Loop_Invariant
+           (for all J in Word_Index range 0 .. K => R (J)'Initialized);
+         pragma Loop_Invariant
+           (Static =>
+              (for all J in Word_Index range 0 .. K =>
+                 R (J) = (M (X) (J) xor M (Y) (J))));
+      end loop;
+
+      Lemma_Same_Block (R, Model.Xor_Blocks (M (X), M (Y)));
+      Store_G (M, X, Y, Z, Accumulate, R);
    end Combine;
+
+   --  Every helper that handles block words is inlined into the strub body
+   --  of Compress and Compress_Xor (see the private part of the spec), so
+   --  the whole computation runs in the one frame that is scrubbed. This is
+   --  GCC's always_inline: a call that cannot be inlined is a compilation
+   --  error, whatever the optimisation level. The procedures the compiler
+   --  generates inside Store_G and Combine to check their postconditions
+   --  (with contracts on) cannot be named here; the flatten attribute on
+   --  the two entry points inlines them, from -O1 up (at -O0 GCC inlines only
+   --  always_inline calls). scripts/check-h0-object.sh checks the result.
+   --  No effect on proof.
+   pragma Inline_Always (FBlaMka);
+   pragma Inline_Always (GB);
+   pragma Inline_Always (Consecutive);
+   pragma Inline_Always (Strided);
+   pragma Inline_Always (P);
+   pragma Inline_Always (Row_Pass);
+   pragma Inline_Always (Column_Pass);
+   pragma Inline_Always (Permute);
+   pragma Inline_Always (Store_G);
+   pragma Inline_Always (Combine);
 
    procedure Compress
      (M : in out Block_Array; X, Y, Z : Block_Index; Work : out Block)

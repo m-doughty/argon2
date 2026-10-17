@@ -24,7 +24,7 @@ jobs:
       - name: No proof escape hatches in the sources
         run: bash scripts/check-sources.sh
       - name: H0 test vectors are current (CPython hashlib)
-        run: python3 scripts/h0-vectors.py --check
+        run: python3 -I scripts/h0-vectors.py --check
       - name: Compression test vectors are current (the reference's known-answer files)
         run: python3 -I scripts/compression-vectors.py --check
       - name: H' test vectors are current (CPython hashlib)
@@ -57,10 +57,20 @@ jobs:
         shell: bash
         working-directory: tests
         run: alr -n build --validation --profiles=argon2=validation
+      # Contracts are on here, so no test may skip itself.
       - name: H-prime, H0 and compression tests
         shell: bash
         working-directory: tests
-        run: ./bin/test_main
+        run: |
+          set -o pipefail
+          status=0
+          log=$(./bin/test_main | tr -d '\r') || status=$?
+          printf '%s\n' "$log"
+          [ "$status" -eq 0 ] || exit "$status"
+          if printf '%s\n' "$log" | grep -q '^note: skipped (contracts off): '; then
+            echo "::error::a test skipped itself in the validation profile, where contracts are on"
+            exit 1
+          fi
       # Inputs up to 2**32 - 1 bytes through the proved H0 code, against the
       # C reference regenerating the same bytes; allocates up to 4 GiB.
       - name: H0 long inputs against the C reference
@@ -68,24 +78,64 @@ jobs:
         working-directory: tests
         run: ./bin/test_main --long
       # The release profile drops run-time checks and contracts (see
-      # alire.toml): the same tests run against that build. The tests that
-      # need contracts on skip themselves and print a note.
+      # alire.toml): the same tests run against that build. The three tests
+      # of precondition rejection skip themselves there, each printing
+      # "note: skipped (contracts off): <test>"; exactly three such lines and
+      # no failure are required.
       - name: Tests on the release profile
         shell: bash
         working-directory: tests
         run: |
+          set -o pipefail
           alr -n build --release --profiles=argon2=release
-          ./bin/test_main
+          status=0
+          log=$(./bin/test_main | tr -d '\r') || status=$?
+          printf '%s\n' "$log"
+          [ "$status" -eq 0 ] || exit "$status"
+          skipped=$(printf '%s\n' "$log" | grep -c '^note: skipped (contracts off): ' || true)
+          if [ "$skipped" -ne 3 ]; then
+            echo "::error::$skipped tests skipped themselves in the release profile (expected 3)"
+            exit 1
+          fi
+          if ! printf '%s\n' "$log" | tail -n 1 | grep -qE '^ *[0-9]+ passed, *0 failed$'; then
+            echo "::error::the release run did not end with \"<n> passed, 0 failed\""
+            exit 1
+          fi
       # The compiled H0, H' and compression code holds no trace of the proof
       # or abort deferral, and compression carries its stack-scrubbing clone
       # and clears the call-used registers on return (see the script's
-      # header). The validation objects come from the build above; the
-      # release build below replaces the test binary, so this step runs last.
+      # header). The script reads the library's objects of both profiles
+      # (obj/release and obj/validation); this step builds both itself, as
+      # the steps above do (after them only the configuration unit and the
+      # test driver are recompiled), so it does not depend on their order.
+      # `alr exec` builds nothing.
       - name: Object code carries no proof residue; compression is hardened
         shell: bash
         run: |
-          (cd tests && alr -n build)
+          (cd tests && alr -n build --validation --profiles=argon2=validation)
+          (cd tests && alr -n build --release --profiles=argon2=release)
           alr -C tests -n exec -- bash ../scripts/check-h0-object.sh
+      # What the hardened code leaves on the stack, after a normal return
+      # (gated) and after an exception (reported only), on the shipped
+      # sources and on copies with one injected line each, built in
+      # obj/exception-stack/ (see the script's header). Exit 1 (a harness
+      # error, or a normal-return control that saw no canary) and exit 3 (a
+      # hardened build left canaries after a normal return where the crate
+      # claims none, or more than its control) fail the job. Where an
+      # exception's control saw no canary, the script prints "exception
+      # results unmeasured"; that is a warning here, not a failure.
+      - name: Stack canary scan of the hardened code (normal return gated, exception reported)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p obj
+          status=0
+          bash scripts/check-exception-stack.sh 2>&1 | tee obj/exception-stack-scan.log || status=$?
+          notice=$(tr -d '\r' < obj/exception-stack-scan.log | sed -n 's/^check-exception-stack: NOTICE: //p' | head -n 1)
+          if [ -n "$notice" ]; then
+            echo "::warning title=Exception results unmeasured (${{ matrix.name }})::$notice"
+          fi
+          exit "$status"
 
   prove:
     name: prove (${{ matrix.name }})
@@ -122,4 +172,4 @@ jobs:
         shell: bash
         run: |
           bash scripts/check-proof-output.sh --self-test
-          bash scripts/check-proof-output.sh
+          bash scripts/check-proof-output.sh --whole-crate
