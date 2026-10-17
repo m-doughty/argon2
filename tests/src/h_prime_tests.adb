@@ -36,7 +36,7 @@ package body H_Prime_Tests is
       end if;
    end Check;
 
-   --  Outputs reach 2**20 + 8 bytes: they live on the heap (a Windows
+   --  Outputs reach 2**24 + 8 bytes: they live on the heap (a Windows
    --  main thread has a 1 MiB stack).
    type Argon2_Bytes is access Byte_Array;
    type Blake2b_Bytes is access Blake2b.Byte_Array;
@@ -150,7 +150,8 @@ package body H_Prime_Tests is
    Input_Lengths : constant Length_List := [72, 1_024];
    Output_Lengths : constant Length_List :=
      [1, 4, 31, 32, 33, 63, 64, 65, 66, 95, 96, 97, 127, 128, 129,
-      1_023, 1_024, 1_025, 65_535, 65_536, 65_537, 1_048_576, 1_048_584];
+      1_023, 1_024, 1_025, 65_535, 65_536, 65_537, 1_048_576, 1_048_584,
+      16_777_224];
 
    procedure Run is
    begin

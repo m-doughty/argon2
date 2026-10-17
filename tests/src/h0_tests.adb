@@ -13,6 +13,7 @@ with System;
 with Blake2b;
 with Blake2b.Hashing;
 with Argon2; use Argon2;
+with Argon2_Config;
 with Argon2.H0;
 with H0_Vectors;
 
@@ -33,6 +34,11 @@ package body H0_Tests is
 
    function Passed return Natural is (Pass_Count);
    function Failed return Natural is (Fail_Count);
+
+   --  Preconditions are checked only when contracts are on (not in the
+   --  release profile); tests of their rejection need that.
+   Contracts_On : constant Boolean :=
+     Argon2_Config.Build_Profile not in Argon2_Config.release;
 
    procedure Check (Condition : Boolean; Label_Text : String) is
    begin
@@ -432,10 +438,12 @@ package body H0_Tests is
       Check (Buffer (99) = 16#A5# and then Buffer (164) = 16#A5#,
              "digest leaves both guard bytes");
       begin
-         Compute_With_Scratch
-           (One, One, One, One, Params (0), Params (1), Params (2),
-            Params (3), Params (4), Params (5), Short);
-         Check (False, "a 32-byte digest must fail the precondition");
+         if Contracts_On then
+            Compute_With_Scratch
+              (One, One, One, One, Params (0), Params (1), Params (2),
+               Params (3), Params (4), Params (5), Short);
+            Check (False, "a 32-byte digest must fail the precondition");
+         end if;
       exception
          when Ada.Assertions.Assertion_Error =>
             Check (True, "a 32-byte digest is refused");

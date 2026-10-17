@@ -143,6 +143,35 @@ is
         Pre => Digest'Length = T and then P <= T
                and then Input'Length <= Max_Input_Bytes;
 
+   --  The two facts Hash needs from Prefix_Done's body, which it hides:
+   --  no byte is done at first, and a done output is the model's.
+   procedure Lemma_Prefix_Empty
+     (Input : Blake2b.Byte_Array; Digest : Byte_Array;
+      T : Model.Output_Length)
+   with Ghost => Static,
+        Global => null,
+        Pre => Digest'Length = T and then Input'Length <= Max_Input_Bytes,
+        Post => Prefix_Done (Input, Digest, T, 0)
+   is
+   begin
+      null;
+   end Lemma_Prefix_Empty;
+
+   procedure Lemma_Prefix_Full
+     (Input : Blake2b.Byte_Array; Digest : Byte_Array;
+      T : Model.Output_Length)
+   with Ghost => Static,
+        Global => null,
+        Pre => Digest'Length = T and then Input'Length <= Max_Input_Bytes
+               and then Prefix_Done (Input, Digest, T, T),
+        Post =>
+          (for all P in Long_Long_Integer range 0 .. T - 1 =>
+             Digest (Digest'First + P) = Model.Out_Byte (Input, T, P))
+   is
+   begin
+      null;
+   end Lemma_Prefix_Full;
+
    function LE32 (N : Length) return Blake2b.Byte_Array
    with Global => null,
         Post => LE32'Result'First = 0 and then LE32'Result'Last = 3
@@ -200,6 +229,11 @@ is
    is
       pragma Annotate
         (GNATprove, Unhide_Info, "Expression_Function_Body", Model.Message);
+      --  Each Update's effect is known from its postcondition and
+      --  Lemma_Update's; the definition only distracts the provers.
+      pragma Annotate
+        (GNATprove, Hide_Info, "Expression_Function_Body",
+         Blake2b.Spec.Incremental.Update);
       Prefix : Blake2b.Byte_Array (0 .. 3) := LE32 (Output_Length);
       Joined : constant Blake2b.Byte_Array :=
         Model.Message (Input, Output_Length) with Ghost => Static;
@@ -333,6 +367,10 @@ is
       V      : out Chain;
       Next_V : out Chain)
    is
+      --  Prefix_Done passes through Hash as a whole; the provers need not
+      --  look inside it (the lemmas above do).
+      pragma Annotate
+        (GNATprove, Hide_Info, "Expression_Function_Body", Prefix_Done);
       T : constant Length := Digest'Length;
       Written : Length := 0;
    begin
@@ -350,6 +388,7 @@ is
          Initial_Hash (S, Input, T, V);
          pragma Assert (Blake2b.Hashing.Is_Finalized (S));
          pragma Assert (Static => V = Model.V (Input, T, 1));
+         Lemma_Prefix_Empty (Input, Digest, T);
          --  r = ceil(T / 32) - 2; the last digest has 33 .. 64 bytes.
          --  Emit a 32-byte prefix while more than 64 bytes remain.
          while T - Written > 64 loop
@@ -384,6 +423,7 @@ is
       end if;
       pragma Assert (Blake2b.Hashing.Is_Finalized (S));
       pragma Assert (Static => Prefix_Done (Input, Digest, T, T));
+      Lemma_Prefix_Full (Input, Digest, T);
       Argon2.Wipe.Bytes (V);
       pragma Assert (for all I in V'Range => V (I) = 0);
       Argon2.Wipe.Bytes (Next_V);

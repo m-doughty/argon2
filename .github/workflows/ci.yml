@@ -65,6 +65,15 @@ jobs:
         shell: bash
         working-directory: tests
         run: ./bin/test_main --long
+      # The release profile drops run-time checks and contracts (see
+      # alire.toml): the same tests run against that build. The tests that
+      # need contracts on skip themselves and print a note.
+      - name: Tests on the release profile
+        shell: bash
+        working-directory: tests
+        run: |
+          alr -n build --release --profiles=argon2=release
+          ./bin/test_main
       # The compiled H0 code holds no trace of the proof, the secondary stack
       # or abort deferral (see the script's header). The validation objects
       # come from the build above; the release build below replaces the test

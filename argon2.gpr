@@ -37,12 +37,14 @@ project Argon2 is
       for Proof_Switches ("argon2-h0_model.adb") use ("--steps=10000");
       for Proof_Switches ("argon2-h0.adb") use ("--steps=10000");
       --  The same for compression and its model: every check proves in
-      --  2500 steps, so 10000 leaves a fourfold margin.
+      --  2400 steps with its cheapest prover, so 10000 leaves a fourfold
+      --  margin (a check is proved when any one prover proves it within
+      --  the budget).
       for Proof_Switches ("argon2-compression.adb") use ("--steps=10000");
       for Proof_Switches ("argon2-compression_model.ads")
         use ("--steps=10000");
-      --  H': every check proves in 5000 steps and some fail at 2500, so
-      --  10000 leaves a twofold margin.
+      --  H': every check proves in 3700 steps with its cheapest prover, so
+      --  10000 leaves a margin of 2.7.
       for Proof_Switches ("argon2-h_prime.adb") use ("--steps=10000");
       for Proof_Switches ("argon2-h_prime_model.ads") use ("--steps=10000");
    end Prove;

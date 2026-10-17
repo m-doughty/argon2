@@ -7,9 +7,25 @@
 # summary (gnatprove.out) and fails on a skipped unit, a checking error,
 # any unproved or justified check, or a summary with no total.
 #
+# With no path it looks under obj/*/gnatprove/; if that finds more than one
+# summary (an old profile's report beside the new one) it fails and asks for
+# the path, rather than judge a report that may not be the run's.
+#
 # Usage: check-proof-output.sh [path/to/gnatprove.out]
 #        check-proof-output.sh --self-test
 set -euo pipefail
+
+discover () { # root: the one summary under root/obj/*/gnatprove/
+  local found n
+  found=$(ls "$1"/obj/*/gnatprove/gnatprove.out 2>/dev/null) || true
+  n=$(grep -c . <<< "$found") || true
+  if [ "$n" -gt 1 ]; then
+    echo "proof output: $n summaries found, give the path of this run's:" >&2
+    echo "$found" >&2
+    return 1
+  fi
+  printf '%s\n' "$found"
+}
 
 judge () { # file
   local f=$1 bad=0
@@ -42,9 +58,17 @@ if [ "${1:-}" = "--self-test" ]; then
   for bad in skip err unproved justified nototal empty missing; do
     if judge "$d/$bad" > /dev/null 2>&1; then echo "self-test: $bad accepted"; exit 1; fi
   done
+  mkdir -p "$d/r/obj/validation/gnatprove" "$d/r/obj/development/gnatprove"
+  cp "$d/good" "$d/r/obj/validation/gnatprove/gnatprove.out"
+  [ "$(discover "$d/r")" = "$d/r/obj/validation/gnatprove/gnatprove.out" ] \
+    || { echo "self-test: single summary not found"; exit 1; }
+  cp "$d/good" "$d/r/obj/development/gnatprove/gnatprove.out"
+  if discover "$d/r" > /dev/null 2>&1; then
+    echo "self-test: two summaries accepted"; exit 1
+  fi
   echo "check-proof-output self-test: ok"; exit 0
 fi
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-f=${1:-$(ls "$root"/obj/*/gnatprove/gnatprove.out 2>/dev/null | head -n 1)}
+f=${1:-$(discover "$root")} || exit 1
 judge "${f:-/nonexistent}"

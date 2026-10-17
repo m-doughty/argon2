@@ -15,10 +15,11 @@ gnat = ">=16"
 
 [build-switches]
 "*".ada_version = "Ada2022"
+# Release builds drop run-time checks: the GNATprove proof of absence
+# of run-time errors (SPARK Silver) covers every check -gnatp removes.
 release.optimization = "Performance"
-# Retain run-time checks while this milestone's proof is being established.
-release.runtime_checks = "Everything"
-release.contracts = "Yes"
+release.runtime_checks = "None"
+release.contracts = "No"
 validation.runtime_checks = "Everything"
 validation.contracts = "Yes"
 validation.compile_checks = "Errors"

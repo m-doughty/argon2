@@ -33,8 +33,8 @@ is
    --  Next_V hold bytes derived from the input, so the caller supplies
    --  them (they may hold anything on entry) and owns their cleanup after
    --  an abnormal exit. On a normal return Hash has already wiped V and
-   --  Next_V and the hash state is finalized (wiped). Their size does not
-   --  depend on either length.
+   --  Next_V and the hash state is finalized (wiped); the postcondition
+   --  says so. Their size does not depend on either length.
    --
    --  Byte P of the output is byte P of H' as Argon2.H_Prime_Model writes
    --  RFC 9106 section 3.3, for every P. That statement is proved and never
@@ -51,7 +51,11 @@ is
    with Global => null,
         Pre => Digest'Length >= 1 and then Input'Length <= Max_Input_Bytes,
         Post =>
-          (Static =>
+          (Executable =>
+             Blake2b.Hashing.Is_Finalized (S)
+             and then (for all I in V'Range => V (I) = 0)
+             and then (for all I in Next_V'Range => Next_V (I) = 0),
+           Static =>
              (for all P in Long_Long_Integer range 0 .. Digest'Length - 1 =>
                 Digest (Digest'First + P)
                 = H_Prime_Model.Out_Byte (Input, Digest'Length, P)));

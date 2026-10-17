@@ -1,26 +1,43 @@
 #!/usr/bin/env bash
-# Mutation suite for H0 (Argon2.H0 and Argon2.H0_Model): shows that
-# the proof and the tests each catch the mistakes they are supposed to
-# catch. Adapted from the blake2b crate's scripts/mutants.sh.
+# Mutation suite for H0 (Argon2.H0 and Argon2.H0_Model) and for block
+# compression (Argon2.Compression and Argon2.Compression_Model): shows
+# that the proof and the tests each catch the mistakes they are supposed
+# to catch, and that the tests catch the mistakes the proof cannot see.
+# Adapted from the blake2b crate's scripts/mutants.sh. (The file keeps its
+# first name.)
 #
 # First the unmutated crate (the baseline) must build, prove and pass its
 # tests under the same settings, or the run stops: otherwise a broken
 # toolchain or a missing prover would look like a caught mutant. The
-# baseline also proves both H0 units once with each prover alone, and
-# every check must cost at most STEP_MARGIN steps (5000, half the units'
-# 10000-step budget in argon2.gpr; not configurable) with its cheapest
-# prover (scripts/spark-proof.py margin), so a check a mutant fails proved
-# in the baseline with at least half its budget to spare; and every check
-# must be proved by at least two of the provers each on its own
-# (scripts/spark-proof.py coverage), so that none rests on one prover.
+# baseline proves every proved unit (UNITS: H0, compression and H', each
+# model and client) from cold, once with every prover and once with each
+# prover alone, and every check must cost at most STEP_MARGIN steps (5000,
+# half the units' 10000-step budget in argon2.gpr; not configurable) with
+# its cheapest prover (scripts/spark-proof.py margin), so a check a mutant
+# fails proved in the baseline with at least half its budget to spare; and
+# every check must be proved by at least two of the provers each on its
+# own (scripts/spark-proof.py coverage), so that none rests on one prover.
+# Both gates fail, rather than pass, a unit with no checks, a check with
+# no VC tree to cost, and a check missing from a single-prover proof.
 #
 # Then each mutant changes one or more places in a TEMPORARY COPY of the
-# crate (under .mutants/, never the sources):
-#   * GNATprove re-runs on the unit named in the mutant's entry (P), under
-#     the guard below;
-#   * for mutants of executable code, the tests are rebuilt and re-run (T).
-#     Mutants of static ghost code (the model, the client's lemma calls)
-#     change nothing any build compiles, so for them tests are n/a.
+# crate (under .mutants/, never the sources). Its entry names the layers
+# that must catch it:
+#   * P: GNATprove re-runs on the unit named in the entry, under the guard
+#     below, and must catch it;
+#   * T: the tests are rebuilt and re-run and must catch it (mutants of
+#     executable code). Mutants of static ghost code only (a model, the
+#     client's lemma calls) change nothing any build compiles, so for them
+#     tests are n/a;
+#   * S: a shared mutant, the same mistake made in the code and in its
+#     static model. Proof shows that the code agrees with the model, not
+#     that the model agrees with the RFC, so the proof is expected NOT to
+#     catch it: every unit the entry names is re-proved from cold, under
+#     the guard, and must still prove (GNATprove exits 0, every check is
+#     proved by a prover, scripts/spark-proof.py proved, and no unit was
+#     skipped, scripts/check-proof-output.sh). The tests (T) must catch
+#     it. A shared mutant whose proof fails (FAILED) is not the same
+#     mistake in both, or broke something else: an error in the suite.
 # The proof is judged strictly, from GNATprove's results file
 # (scripts/spark-proof.py judge): caught only when an unproved check lies
 # at one of the places the mutant's entry expects (file, line and rule, in
@@ -30,18 +47,26 @@
 # without the proof seeing the mistake): MISSED. A proof the guard
 # killed, or whose unproved checks failed only through a timeout, memory
 # exhaustion, a prover crash or a prover that never ran, is TAINTED: not a
-# catch, and it fails the run. The tests catch a mutant only with H0
-# evidence: the harness reports failed tests (" N passed, M failed" with
-# M > 0) and at least one of them is an H0 test ("FAIL: H0: ...") that
-# did not fail through Storage_Error. An exception that escapes the
-# harness, or failures outside H0, are an ERROR, not a catch. The
-# classifier has its own check: scripts/h0-mutants.sh --selftest.
+# catch, and it fails the run. The tests catch a mutant only with evidence
+# from the mutated unit's own tests: the harness reports failed tests
+# (" N passed, M failed" with M > 0) and at least one of them is a test of
+# that unit ("FAIL: H0: ..." for an H0 mutant, "FAIL: compression: ..."
+# for a compression mutant) that did not fail through Storage_Error. An
+# exception that escapes the harness, or failures only outside the unit's
+# tests, are an ERROR, not a catch. The classifier has its own check:
+# scripts/h0-mutants.sh --selftest.
 #
-# The mutants:
+# The H0 mutants:
 #   * field-order: T and m swapped among the hashed fields (code);
 #   * field-byte-order: the fields stored big-endian, the local contract
-#     changed to match (code);
-#   * len-p-omitted: the length field of P never absorbed (code);
+#     changed to match (code). The top byte is written
+#     (Value / 2**24) mod 2**8, the same value for a 32-bit Value: written
+#     Value / 2**24, Z3 runs on the false assertion into the timeout or
+#     the memory guard instead of failing on its step budget (TAINTED);
+#   * len-p-omitted: the length field of P never absorbed: Absorb_Field
+#     returns at once for it (code). Omitting its call in Compute instead
+#     makes Z3 run on the false precondition of Absorb_Input into the
+#     timeout or the memory guard (TAINTED);
 #   * dropped-final-chunk: each input's last chunk never absorbed (code);
 #   * rounded-m: m replaced by the rounded m' = 4p floor (m / 4p) (code);
 #   * copy-input-swap: Copy_Input copies S where P belongs and P where S
@@ -60,6 +85,32 @@
 #     belongs (ghost; the byte-position lemma must fail);
 #   * model-length: the message one byte longer than its pieces (ghost).
 #
+# The compression mutants. Implementation-only (the code wrong, the model
+# right; P and T):
+#   * c-rot-const: GB's second rotation by 25 instead of 24;
+#   * c-rot-dir: GB's third rotation (by 16) to the left instead of the
+#     right (not the rotation by 32, which is the same either way);
+#   * c-fblamka-factor: fBlaMka without its factor 2;
+#   * c-diagonal-call: the fifth GB call, on the diagonal (0, 5, 10, 15),
+#     made on (0, 5, 10, 14), its lemma call left as it was;
+#   * c-diagonal: the same with the code's lemmas changed to match (the
+#     code consistent with itself, not with the model);
+#   * c-pass-swap: the row pass applying P to the column groups and the
+#     column pass to the row groups (the passes' word mappings swapped at
+#     their calls of P);
+#   * c-register-transpose: the word lists of rows and columns of the
+#     register matrix exchanged (the bodies of Consecutive and Strided).
+#     It computes what c-pass-swap computes, through other code, and the
+#     proof catches it elsewhere;
+#   * c-final-xor: the final xor with X xor Y omitted (G = P's output);
+#   * c-xor-old-z: Compress_Xor not xoring the old block (it writes G).
+# Shared (the same mistake in Argon2.Compression and in
+# Argon2.Compression_Model, including the code's lemmas; S and T):
+#   * s-rot-const: the rotation by 25 instead of 24;
+#   * s-diagonal: the diagonal (0, 5, 10, 14) instead of (0, 5, 10, 15);
+#   * s-fblamka-factor: fBlaMka without its factor 2;
+#   * s-final-xor: G without its final xor with R = X xor Y.
+#
 # The guard. Every mutant proof runs under a guard that polls the proof's
 # process tree every MUTANT_POLL seconds and kills the whole tree when one
 # process, or the tree in total, exceeds MUTANT_RSS_KB of resident memory,
@@ -72,6 +123,7 @@
 #        scripts/h0-mutants.sh --selftest (the test classifier only)
 #        ALR=/path/to/alr PROVE_JOBS=2 scripts/h0-mutants.sh
 #        ONLY=field-order,rounded-m scripts/h0-mutants.sh
+#        ONLY=c-rot-const,s-rot-const scripts/h0-mutants.sh
 #        MUTANT_TIMEOUT=300 MUTANT_RSS_KB=4194304 MUTANT_WALL=3600 \
 #          MUTANT_POLL=2 scripts/h0-mutants.sh
 # Logs are kept in .mutants/logs/. The crate's CI does not run this
@@ -94,30 +146,61 @@ SPARK_PROOF="$ROOT/scripts/spark-proof.py"
 PYTHON=${PYTHON:-python3}
 PROVERS="z3 cvc5 altergo"
 UNITS="argon2-h0_model.adb argon2-h0.adb"
+UNITS="$UNITS argon2-compression_model.ads argon2-compression.adb"
+UNITS="$UNITS argon2-h_prime_model.ads argon2-h_prime.adb"
 
 # name | file | exact text | replacement | unit to prove | must catch |
 #   expected unproved checks (FILE:LINE:RULE, comma-separated, as the
 #   mutated copy numbers its lines; a change to the sources can move them:
 #   rerun with DISCOVER=1 and read each mutant's judge log to update them)
 # Entries with the same name are one mutant changing several places; the
-# unit, the layers and the expected checks are those of its first entry.
+# unit, the layers and the expected checks are those of its first entry,
+# and the tests that give evidence are those of its first entry's file.
+# "Must catch" is P, PT or ST (see the header). A P or PT mutant proves
+# one unit; an ST mutant names every unit that must still prove,
+# separated by spaces, and no expected checks.
 # In the text and its replacement, \n stands for a line break.
 MUTANTS=(
-  "field-order|src/argon2-h0.adb|        when 1 => Pr.Tag_Length,\n        when 2 => Pr.Memory,|        when 1 => Pr.Memory,\n        when 2 => Pr.Tag_Length,|argon2-h0.adb|PT|argon2-h0.adb:428:VC_ASSERT"
-  "field-byte-order|src/argon2-h0.adb|        Post   => Bytes (0) = Byte (Value mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (3) = Byte (Value / 2**24);|        Post   => Bytes (3) = Byte (Value mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (0) = Byte (Value / 2**24);|argon2-h0.adb|PT|argon2-h0.adb:433:VC_ASSERT"
-  "field-byte-order|src/argon2-h0.adb|        [Byte (Value mod 2**8), Byte ((Value / 2**8) mod 2**8),\n         Byte ((Value / 2**16) mod 2**8), Byte (Value / 2**24)];|        [Byte (Value / 2**24), Byte ((Value / 2**16) mod 2**8),\n         Byte ((Value / 2**8) mod 2**8), Byte (Value mod 2**8)];|||"
-  "len-p-omitted|src/argon2-h0.adb|         Absorb_Field (St, Pr, Password, Salt, Secret, Associated_Data, Id);\n|         if Id /= 6 then\n            Absorb_Field\n              (St, Pr, Password, Salt, Secret, Associated_Data, Id);\n         end if;\n|argon2-h0.adb|PT|argon2-h0.adb:578:VC_PRECONDITION"
-  "dropped-final-chunk|src/argon2-h0.adb|      while Offset < Total loop|      while Total - Offset > Chunk_Bytes loop|argon2-h0.adb|PT|argon2-h0.adb:504:VC_ASSERT"
-  "rounded-m|src/argon2-h0.adb|        when 2 => Pr.Memory,|        when 2 =>\n          (if 4 * Pr.Parallelism = 0 then Pr.Memory\n           else 4 * Pr.Parallelism * (Pr.Memory / (4 * Pr.Parallelism))),|argon2-h0.adb|PT|argon2-h0.adb:430:VC_ASSERT"
-  "copy-input-swap|src/argon2-h0.adb|         when 10 => Copy_Chunk (P, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (S, Offset, Chunk (0 .. Last));|         when 10 => Copy_Chunk (S, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (P, Offset, Chunk (0 .. Last));|argon2-h0.adb|PT|argon2-h0.adb:245:VC_POSTCONDITION"
-  "client-no-bridge|src/argon2-h0.adb|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (0 .. Last));|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (1 .. 0));|argon2-h0.adb|P|argon2-h0.adb:465:VC_PRECONDITION"
-  "model-m-prime|src/argon2-h0_model.ads|     ([0 => Parallelism, 1 => Tag_Length, 2 => Memory, 3 => Passes,|     ([0 => Parallelism, 1 => Tag_Length,\n       2 => (if 4 * Parallelism = 0 then Memory\n             else 4 * Parallelism * (Memory / (4 * Parallelism))),\n       3 => Passes,|argon2-h0.adb|P|argon2-h0.adb:428:VC_ASSERT"
+  "field-order|src/argon2-h0.adb|        when 1 => Pr.Tag_Length,\n        when 2 => Pr.Memory,|        when 1 => Pr.Memory,\n        when 2 => Pr.Tag_Length,|argon2-h0.adb|PT|argon2-h0.adb:427:VC_ASSERT"
+  "field-byte-order|src/argon2-h0.adb|        Post   => Bytes (0) = Byte (Value mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (3) = Byte (Value / 2**24);|        Post   => Bytes (0) = Byte ((Value / 2**24) mod 2**8)\n                  and then Bytes (1) = Byte ((Value / 2**16) mod 2**8)\n                  and then Bytes (2) = Byte ((Value / 2**8) mod 2**8)\n                  and then Bytes (3) = Byte (Value mod 2**8);|argon2-h0.adb|PT|argon2-h0.adb:432:VC_ASSERT"
+  "field-byte-order|src/argon2-h0.adb|        [Byte (Value mod 2**8), Byte ((Value / 2**8) mod 2**8),\n         Byte ((Value / 2**16) mod 2**8), Byte (Value / 2**24)];|        [Byte ((Value / 2**24) mod 2**8), Byte ((Value / 2**16) mod 2**8),\n         Byte ((Value / 2**8) mod 2**8), Byte (Value mod 2**8)];|||"
+  "len-p-omitted|src/argon2-h0.adb|      Store_LE32 (Field_Value (Pr, P, S, K, X, Id), Bytes);\n      Lemma_Fields_Of|      if Id = 6 then\n         return;\n      end if;\n      Store_LE32 (Field_Value (Pr, P, S, K, X, Id), Bytes);\n      Lemma_Fields_Of|argon2-h0.adb|PT|argon2-h0.adb:262:VC_POSTCONDITION"
+  "dropped-final-chunk|src/argon2-h0.adb|      while Offset < Total loop|      while Total - Offset > Chunk_Bytes loop|argon2-h0.adb|PT|argon2-h0.adb:503:VC_ASSERT"
+  "rounded-m|src/argon2-h0.adb|        when 2 => Pr.Memory,|        when 2 =>\n          (if 4 * Pr.Parallelism = 0 then Pr.Memory\n           else 4 * Pr.Parallelism * (Pr.Memory / (4 * Pr.Parallelism))),|argon2-h0.adb|PT|argon2-h0.adb:429:VC_ASSERT"
+  "copy-input-swap|src/argon2-h0.adb|         when 10 => Copy_Chunk (P, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (S, Offset, Chunk (0 .. Last));|         when 10 => Copy_Chunk (S, Offset, Chunk (0 .. Last));\n         when 11 => Copy_Chunk (P, Offset, Chunk (0 .. Last));|argon2-h0.adb|PT|argon2-h0.adb:244:VC_POSTCONDITION"
+  "client-no-bridge|src/argon2-h0.adb|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (0 .. Last));|         Pr.Kind, P, S, K, X, Id, I64 (Offset), Chunk (1 .. 0));|argon2-h0.adb|P|argon2-h0.adb:464:VC_PRECONDITION"
+  "model-m-prime|src/argon2-h0_model.ads|     ([0 => Parallelism, 1 => Tag_Length, 2 => Memory, 3 => Passes,|     ([0 => Parallelism, 1 => Tag_Length,\n       2 => (if 4 * Parallelism = 0 then Memory\n             else 4 * Parallelism * (Memory / (4 * Parallelism))),\n       3 => Passes,|argon2-h0.adb|P|argon2-h0.adb:427:VC_ASSERT"
   "model-m-prime|src/argon2-h0_model.ads|                              Kind, P, S, K, X) (2) = Memory|                              Kind, P, S, K, X) (2)\n                   = (if 4 * Parallelism = 0 then Memory\n                      else 4 * Parallelism\n                           * (Memory / (4 * Parallelism)))|||"
-  "model-le-byte-order|src/argon2-h0_model.ads|        when 0      => Byte (Field mod 2**8),\n        when 1      => Byte ((Field / 2**8) mod 2**8),\n        when 2      => Byte ((Field / 2**16) mod 2**8),\n        when others => Byte (Field / 2**24))|        when 0      => Byte (Field / 2**24),\n        when 1      => Byte ((Field / 2**16) mod 2**8),\n        when 2      => Byte ((Field / 2**8) mod 2**8),\n        when others => Byte (Field mod 2**8))|argon2-h0.adb|P|argon2-h0.adb:433:VC_ASSERT"
+  "model-le-byte-order|src/argon2-h0_model.ads|        when 0      => Byte (Field mod 2**8),\n        when 1      => Byte ((Field / 2**8) mod 2**8),\n        when 2      => Byte ((Field / 2**16) mod 2**8),\n        when others => Byte (Field / 2**24))|        when 0      => Byte (Field / 2**24),\n        when 1      => Byte ((Field / 2**16) mod 2**8),\n        when 2      => Byte ((Field / 2**8) mod 2**8),\n        when others => Byte (Field mod 2**8))|argon2-h0.adb|P|argon2-h0.adb:432:VC_ASSERT"
   "model-schedule-swap|src/argon2-h0_model.ads|       8  => (Source => 10, Start => 0, Count => L (10), First => 28),|       8  => (Source => 11, Start => 0, Count => L (10), First => 28),|argon2-h0_model.adb|P|argon2-h0_model.ads:163:VC_POSTCONDITION"
   "model-schedule-swap|src/argon2-h0_model.ads|       10 => (Source => 11, Start => 0, Count => L (11),|       10 => (Source => 10, Start => 0, Count => L (11),|||"
   "model-formula-field|src/argon2-h0_model.ads|      elsif Pos < 28 then LE_Byte (F (6), Pos - 24)|      elsif Pos < 28 then LE_Byte (F (7), Pos - 24)|argon2-h0_model.adb|P|argon2-h0_model.adb:112:VC_ASSERT"
   "model-length|src/argon2-h0_model.ads|     (40 + L (10) + L (11) + L (12) + L (13))|     (41 + L (10) + L (11) + L (12) + L (13))|argon2-h0_model.adb|P|argon2-h0_model.ads:117:VC_POSTCONDITION"
+  # Compression: implementation-only mutants (the code wrong, the model
+  # right; proof and tests must each catch them).
+  "c-rot-const|src/argon2-compression.adb|      VB := Rotate_Right (VB xor VC, 24);|      VB := Rotate_Right (VB xor VC, 25);|argon2-compression.adb|PT|argon2-compression.adb:72:VC_POSTCONDITION"
+  "c-rot-dir|src/argon2-compression.adb|      VD := Rotate_Right (VD xor VA, 16);|      VD := Rotate_Left (VD xor VA, 16);|argon2-compression.adb|PT|argon2-compression.adb:72:VC_POSTCONDITION"
+  "c-fblamka-factor|src/argon2-compression.adb|      return X + Y + 2 * ((X and 16#FFFF_FFFF#) * (Y and 16#FFFF_FFFF#));|      return X + Y + ((X and 16#FFFF_FFFF#) * (Y and 16#FFFF_FFFF#));|argon2-compression.adb|PT|argon2-compression.adb:57:VC_POSTCONDITION"
+  "c-diagonal-call|src/argon2-compression.adb|      GB (R, V (0), V (5), V (10), V (15));|      GB (R, V (0), V (5), V (10), V (14));|argon2-compression.adb|PT|argon2-compression.adb:184:VC_PRECONDITION,argon2-compression.adb:185:VC_PRECONDITION"
+  "c-diagonal|src/argon2-compression.adb|          and then Model.Distinct (V (0), V (5), V (10), V (15))|          and then Model.Distinct (V (0), V (5), V (10), V (14))|argon2-compression.adb|PT|argon2-compression.adb:165:VC_POSTCONDITION"
+  "c-diagonal|src/argon2-compression.adb|      GB (R, V (0), V (5), V (10), V (15));\n      Lemma_Same_Block (R, Model.GB (Prev, V (0), V (5), V (10), V (15)));|      GB (R, V (0), V (5), V (10), V (14));\n      Lemma_Same_Block (R, Model.GB (Prev, V (0), V (5), V (10), V (14)));|||"
+  "c-pass-swap|src/argon2-compression.adb|         P (R, Consecutive (I));\n         pragma Loop_Invariant (Static => R = Model.Rows (Entry_R, I + 1));|         P (R, Strided (I));\n         pragma Loop_Invariant (Static => R = Model.Rows (Entry_R, I + 1));|argon2-compression.adb|PT|argon2-compression.adb:207:VC_PRECONDITION,argon2-compression.adb:208:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:208:VC_LOOP_INVARIANT_PRESERV,argon2-compression.adb:222:VC_PRECONDITION,argon2-compression.adb:223:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:223:VC_LOOP_INVARIANT_PRESERV"
+  "c-pass-swap|src/argon2-compression.adb|         P (R, Strided (I));\n         pragma Loop_Invariant (Static => R = Model.Columns (Entry_R, I + 1));|         P (R, Consecutive (I));\n         pragma Loop_Invariant (Static => R = Model.Columns (Entry_R, I + 1));|||"
+  "c-register-transpose|src/argon2-compression.adb|   function Consecutive (I : Integer) return Model.Positions\n   is ([16 * I,      16 * I + 1,  16 * I + 2,  16 * I + 3,\n        16 * I + 4,  16 * I + 5,  16 * I + 6,  16 * I + 7,\n        16 * I + 8,  16 * I + 9,  16 * I + 10, 16 * I + 11,\n        16 * I + 12, 16 * I + 13, 16 * I + 14, 16 * I + 15])|   function Consecutive (I : Integer) return Model.Positions\n   is ([2 * I,       2 * I + 1,   2 * I + 16,  2 * I + 17,\n        2 * I + 32,  2 * I + 33,  2 * I + 48,  2 * I + 49,\n        2 * I + 64,  2 * I + 65,  2 * I + 80,  2 * I + 81,\n        2 * I + 96,  2 * I + 97,  2 * I + 112, 2 * I + 113])|argon2-compression.adb|PT|argon2-compression.adb:118:VC_POSTCONDITION,argon2-compression.adb:130:VC_POSTCONDITION"
+  "c-register-transpose|src/argon2-compression.adb|   function Strided (I : Integer) return Model.Positions\n   is ([2 * I,       2 * I + 1,   2 * I + 16,  2 * I + 17,\n        2 * I + 32,  2 * I + 33,  2 * I + 48,  2 * I + 49,\n        2 * I + 64,  2 * I + 65,  2 * I + 80,  2 * I + 81,\n        2 * I + 96,  2 * I + 97,  2 * I + 112, 2 * I + 113])|   function Strided (I : Integer) return Model.Positions\n   is ([16 * I,      16 * I + 1,  16 * I + 2,  16 * I + 3,\n        16 * I + 4,  16 * I + 5,  16 * I + 6,  16 * I + 7,\n        16 * I + 8,  16 * I + 9,  16 * I + 10, 16 * I + 11,\n        16 * I + 12, 16 * I + 13, 16 * I + 14, 16 * I + 15])|||"
+  "c-final-xor|src/argon2-compression.adb|           xor R (K) xor M (X) (K) xor M (Y) (K);|           xor R (K);|argon2-compression.adb|PT|argon2-compression.adb:305:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:305:VC_LOOP_INVARIANT_PRESERV,argon2-compression.adb:306:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:306:VC_LOOP_INVARIANT_PRESERV,argon2-compression.adb:307:VC_LOOP_INVARIANT_INIT,argon2-compression.adb:307:VC_LOOP_INVARIANT_PRESERV"
+  "c-xor-old-z|src/argon2-compression.adb|      Combine (M, X, Y, Z, Accumulate => True, R => Work);|      Combine (M, X, Y, Z, Accumulate => False, R => Work);|argon2-compression.adb|PT|argon2-compression.ads:70:VC_POSTCONDITION,argon2-compression.ads:71:VC_POSTCONDITION"
+  # Compression: shared mutants (the same mistake in the code and the
+  # static model; the proof must still succeed, the tests must catch them).
+  "s-rot-const|src/argon2-compression.adb|      VB := Rotate_Right (VB xor VC, 24);|      VB := Rotate_Right (VB xor VC, 25);|argon2-compression_model.ads argon2-compression.adb|ST|"
+  "s-rot-const|src/argon2-compression_model.ads|         B1 : constant Word := Rotate_Right (V (B) xor C1, 24);|         B1 : constant Word := Rotate_Right (V (B) xor C1, 25);|||"
+  "s-diagonal|src/argon2-compression.adb|          and then Model.Distinct (V (0), V (5), V (10), V (15))|          and then Model.Distinct (V (0), V (5), V (10), V (14))|argon2-compression_model.ads argon2-compression.adb|ST|"
+  "s-diagonal|src/argon2-compression.adb|      GB (R, V (0), V (5), V (10), V (15));\n      Lemma_Same_Block (R, Model.GB (Prev, V (0), V (5), V (10), V (15)));|      GB (R, V (0), V (5), V (10), V (14));\n      Lemma_Same_Block (R, Model.GB (Prev, V (0), V (5), V (10), V (14)));|||"
+  "s-diagonal|src/argon2-compression_model.ads|         V5 : constant Block := GB (V4, Pos (0), Pos (5), Pos (10), Pos (15));|         V5 : constant Block := GB (V4, Pos (0), Pos (5), Pos (10), Pos (14));|||"
+  "s-fblamka-factor|src/argon2-compression.adb|      return X + Y + 2 * ((X and 16#FFFF_FFFF#) * (Y and 16#FFFF_FFFF#));|      return X + Y + ((X and 16#FFFF_FFFF#) * (Y and 16#FFFF_FFFF#));|argon2-compression_model.ads argon2-compression.adb|ST|"
+  "s-fblamka-factor|src/argon2-compression_model.ads|   is (X + Y + 2 * ((X mod 2**32) * (Y mod 2**32)))|   is (X + Y + ((X mod 2**32) * (Y mod 2**32)))|||"
+  "s-final-xor|src/argon2-compression.adb|           xor R (K) xor M (X) (K) xor M (Y) (K);|           xor R (K);|argon2-compression_model.ads argon2-compression.adb|ST|"
+  "s-final-xor|src/argon2-compression_model.ads|         Xor_Blocks (Z, R))|         Z)|||"
 )
 
 copy_crate () {
@@ -181,10 +264,19 @@ run_tests () {    # $1 = crate copy, $2 = log
   (cd "$1/tests" && ./bin/test_main) > "$2" 2>&1
 }
 
+# A unit's file name without its extension (argon2-h0.adb -> argon2-h0,
+# argon2-compression_model.ads -> argon2-compression_model): the name of
+# its results file.
+unit_stem () {
+  local stem=${1%.adb}
+  echo "${stem%.ads}"
+}
+
 # The results file GNATprove wrote for unit $2 in crate copy $1 (empty if
 # there is none).
 spark_file () {
-  local stem=${2%.adb}
+  local stem
+  stem=$(unit_stem "$2")
   { find "$1/obj" -path "*/gnatprove/$stem.spark" 2>/dev/null || true; } \
     | head -n 1
 }
@@ -296,13 +388,32 @@ proof_outcome () {   # ... $6 = expected checks (comma-separated)
   esac
 }
 
-# A test run's outcome: yes only with H0 evidence (see the header).
-test_outcome () {    # $1 = exit status, $2 = log
-  if [ "$1" -eq 0 ]; then
+# The tests whose failure is evidence against a mutant of source file $1
+# (as the harness labels their failures), or nothing for a file the suite
+# has no tests for.
+evidence_for () {
+  case "$1" in
+    src/argon2-h0.adb|src/argon2-h0_model.ads|src/argon2-h0_model.adb)
+      echo H0 ;;
+    src/argon2-compression.adb|src/argon2-compression_model.ads)
+      echo compression ;;
+    *) echo "" ;;
+  esac
+}
+
+# A test run's outcome: yes only with evidence from the mutated unit's
+# tests (see the header).
+test_outcome () {    # $1 = exit status, $2 = log, $3 = evidence (H0, ...)
+  if [ -z "$3" ]; then
+    echo ERROR
+  elif [ "$1" -eq 0 ]; then
     echo no
   elif grep -qE '^ *[0-9]+ passed, *[1-9][0-9]* failed' "$2" \
-       && awk '/^FAIL: H0: / && tolower($0) !~ /storage_error/ { found = 1 }
-               END { exit !found }' "$2"; then
+       && awk -v marker="FAIL: $3: " '
+            index($0, marker) == 1 && tolower($0) !~ /storage_error/ {
+              found = 1
+            }
+            END { exit !found }' "$2"; then
     echo yes
   else
     echo ERROR
@@ -313,32 +424,48 @@ test_outcome () {    # $1 = exit status, $2 = log
 classifier_selftest () {
   local dir failures=0 got
   dir=$(mktemp -d)
-  # name | exit status | log | expected outcome
+  # name | evidence | exit status | log | expected outcome
   local cases=(
-    "pass|0| 1444 passed, 0 failed|no"
-    "h0-mismatch|1|FAIL: H0: RFC 9106 pre-hashing digest, y = 2: got 00\n 1443 passed, 1 failed|yes"
-    "h0-contract|1|FAIL: H0: random case 3: unexpected exception: raised ADA.ASSERTIONS.ASSERTION_ERROR\n 1443 passed, 1 failed|yes"
-    "storage-error-escapes|1|raised STORAGE_ERROR : synthetic allocation failure|ERROR"
-    "storage-error-in-h0|1|FAIL: H0: random case 3: unexpected exception: raised STORAGE_ERROR\n 1443 passed, 1 failed|ERROR"
-    "h-prime-only|1|FAIL: input 1 output 4 input first 0 output first 0\n 1443 passed, 1 failed|ERROR"
-    "marker-without-count|1|FAIL: H0: every input empty|ERROR"
-    "crash-no-log|139||ERROR"
-    "many-h0-failures|1|@MANY@|yes"
+    "pass|H0|0| 1444 passed, 0 failed|no"
+    "h0-mismatch|H0|1|FAIL: H0: RFC 9106 pre-hashing digest, y = 2: got 00\n 1443 passed, 1 failed|yes"
+    "h0-contract|H0|1|FAIL: H0: random case 3: unexpected exception: raised ADA.ASSERTIONS.ASSERTION_ERROR\n 1443 passed, 1 failed|yes"
+    "storage-error-escapes|H0|1|raised STORAGE_ERROR : synthetic allocation failure|ERROR"
+    "storage-error-in-h0|H0|1|FAIL: H0: random case 3: unexpected exception: raised STORAGE_ERROR\n 1443 passed, 1 failed|ERROR"
+    "h-prime-only|H0|1|FAIL: input 1 output 4 input first 0 output first 0\n 1443 passed, 1 failed|ERROR"
+    "h-prime-tests-only|H0|1|FAIL: H': RFC 9106 tag 32\n 1443 passed, 1 failed|ERROR"
+    "marker-without-count|H0|1|FAIL: H0: every input empty|ERROR"
+    "crash-no-log|H0|139||ERROR"
+    "many-h0-failures|H0|1|@MANY@|yes"
+    "compression-for-h0|H0|1|FAIL: compression: Ada argon2d: published block\n 1443 passed, 1 failed|ERROR"
+    "compression-pass|compression|0| 1444 passed, 0 failed|no"
+    "compression-mismatch|compression|1|FAIL: compression: Ada argon2d: published block\n 1443 passed, 1 failed|yes"
+    "compression-many|compression|1|FAIL: compression: word 3 in X plain: equals the oracle\nFAIL: compression: random 7: equals the oracle\nFAIL: H0: random case 3: against the C serialisation\n 1440 passed, 3 failed|yes"
+    "h0-for-compression|compression|1|FAIL: H0: random case 3: against the C serialisation\n 1443 passed, 1 failed|ERROR"
+    "h-prime-for-compression|compression|1|FAIL: H': RFC 9106 tag 32\n 1443 passed, 1 failed|ERROR"
+    "harness-for-compression|compression|1|FAIL: input 1 output 4 input first 0 output first 0\n 1443 passed, 1 failed|ERROR"
+    "compression-case|compression|1|FAIL: Compression: Ada argon2d: published block\n 1443 passed, 1 failed|ERROR"
+    "compression-indented|compression|1|  FAIL: compression: Ada argon2d: published block\n 1443 passed, 1 failed|ERROR"
+    "compression-storage-error|compression|1|FAIL: compression: random 3: raised STORAGE_ERROR\n 1443 passed, 1 failed|ERROR"
+    "compression-escapes|compression|1|raised CONSTRAINT_ERROR : compression_tests.adb:113 index check failed|ERROR"
+    "compression-no-count|compression|1|FAIL: compression: Ada argon2d: published block|ERROR"
+    "compression-crash|compression|139||ERROR"
+    "compression-many-failures|compression|1|@MANY@|yes"
+    "no-evidence||1|FAIL: compression: Ada argon2d: published block\n 1443 passed, 1 failed|ERROR"
   )
-  local entry name status text want
+  local entry name evidence status text want
   for entry in "${cases[@]}"; do
-    IFS='|' read -r name status text want <<< "$entry"
+    IFS='|' read -r name evidence status text want <<< "$entry"
     if [ "$text" = "@MANY@" ]; then
       # More than a pipe's buffer of failures (a pipeline with grep -q
       # once misread this under pipefail).
       for got in $(seq 1 3000); do
-        echo "FAIL: H0: random case $got: against the C serialisation"
+        echo "FAIL: $evidence: random case $got: against the oracle"
       done > "$dir/$name.log"
       echo " 1 passed, 3000 failed" >> "$dir/$name.log"
     else
       printf '%b\n' "$text" > "$dir/$name.log"
     fi
-    got=$(test_outcome "$status" "$dir/$name.log")
+    got=$(test_outcome "$status" "$dir/$name.log" "$evidence")
     if [ "$got" != "$want" ]; then
       echo "classifier selftest FAILED: $name: got $got, want $want"
       failures=$((failures + 1))
@@ -377,17 +504,50 @@ fi
 # The test classifier must pass its own check first.
 classifier_selftest > /dev/null || { classifier_selftest; exit 2; }
 
-# Every selected mutation site must occur exactly once in the sources, and
+# Every selected mutation site must occur exactly once in the sources,
 # every proof mutant must name the checks it expects to fail (DISCOVER=1
-# lifts that, to find them: the judge then accepts any clean check),
-# before any time goes into the baseline.
+# lifts that, to find them: the judge then accepts any clean check), a
+# shared mutant must name none and be tested, and a tested mutant's file
+# must have tests to give evidence, before any time goes into the
+# baseline.
 sites_ok=1
 for entry in "${MUTANTS[@]}"; do
   IFS='|' read -r name file search replace unit expect checks <<< "$entry"
   case " ${names[*]} " in *" $name "*) ;; *) continue ;; esac
-  if [ -n "$unit" ] && [ -z "$checks" ] && [ "${DISCOVER:-0}" != 1 ]; then
-    echo "mutant $name: no expected checks"
-    sites_ok=0
+  if [ -n "$unit" ]; then
+    case "$expect" in
+      P|PT) multiple=0 ;;
+      ST) multiple=1 ;;
+      *) echo "mutant $name: layers '$expect' (want P, PT or ST)"
+         sites_ok=0
+         multiple=1 ;;
+    esac
+    if [ "$multiple" -eq 0 ] && [ "$unit" != "${unit%% *}" ]; then
+      echo "mutant $name: a proof mutant proves one unit, not '$unit'"
+      sites_ok=0
+    fi
+    case "$expect" in
+      *S*)
+        if [ -n "$checks" ]; then
+          echo "mutant $name: a shared mutant expects no unproved check"
+          sites_ok=0
+        fi
+        ;;
+      *)
+        if [ -z "$checks" ] && [ "${DISCOVER:-0}" != 1 ]; then
+          echo "mutant $name: no expected checks"
+          sites_ok=0
+        fi
+        ;;
+    esac
+    case "$expect" in
+      *T*)
+        if [ -z "$(evidence_for "$file")" ]; then
+          echo "mutant $name: no tests give evidence for $file"
+          sites_ok=0
+        fi
+        ;;
+    esac
   fi
   search=${search//\\n/$'\n'}
   count=$(occurrences "$ROOT/$file" "$search")
@@ -424,13 +584,14 @@ for unit in $UNITS; do
     echo "  baseline proof of $unit left no results file"
     exit 2
   fi
-  cp "$spark" "$LOGS/baseline.${unit%.adb}.spark"
+  stem=$(unit_stem "$unit")
+  cp "$spark" "$LOGS/baseline.$stem.spark"
   for prover in $PROVERS; do
     prove_alone "$base" "$unit" "$prover" \
       "$LOGS/baseline.prove.$unit.$prover.log"
     spark=$(spark_file "$base" "$unit")
     if [ -n "$spark" ]; then
-      cp "$spark" "$LOGS/baseline.${unit%.adb}.$prover.spark"
+      cp "$spark" "$LOGS/baseline.$stem.$prover.spark"
     fi
   done
 done
@@ -471,6 +632,7 @@ for name in "${names[@]}"; do
   unit=""
   expect=""
   checks=""
+  evidence=""
   for entry in "${MUTANTS[@]}"; do
     IFS='|' read -r ename file search replace eunit eexpect echecks \
       <<< "$entry"
@@ -479,6 +641,7 @@ for name in "${names[@]}"; do
       unit=$eunit
       expect=$eexpect
       checks=$echecks
+      evidence=$(evidence_for "$file")
     fi
     search=${search//\\n/$'\n'}
     replace=${replace//\\n/$'\n'}
@@ -496,32 +659,79 @@ for name in "${names[@]}"; do
     caught_p=ERROR
     caught_t=ERROR
   else
-    guarded_prove "$dir" "$unit" "$LOGS/$name.prove.log" "$LOGS/$name.guard"
-    spark=$(spark_file "$dir" "$unit")
-    if [ -n "$spark" ]; then
-      cp "$spark" "$LOGS/$name.spark"
-      spark="$LOGS/$name.spark"
-    fi
-    if [ -n "$GUARD_FIRED" ]; then
-      caught_p=TAINTED
-      echo "  guard fired: $GUARD_FIRED"
-    else
-      caught_p=$(proof_outcome "$PROVE_STATUS" "$LOGS/$name.prove.log" \
-                   "$unit" "$spark" "$LOGS/$name.judge.log" "$checks")
-      [ ! -f "$LOGS/$name.judge.log" ] \
-        || sed 's/^/  /' "$LOGS/$name.judge.log"
-    fi
+    case "$expect" in
+      *S*)
+        # A shared mutant: every unit it names must still prove, cold,
+        # under the guard, with every check proved by a prover and every
+        # unit checked. The proof catching nothing is the expected "no".
+        caught_p=no
+        wall=0
+        peak=0
+        for one in $unit; do
+          stem=$(unit_stem "$one")
+          rm -rf "$dir"/obj/*/gnatprove
+          guarded_prove "$dir" "$one" "$LOGS/$name.prove.$stem.log" \
+            "$LOGS/$name.guard"
+          wall=$((wall + GUARD_WALL_S))
+          [ "$GUARD_PEAK_TREE_KB" -le "$peak" ] || peak=$GUARD_PEAK_TREE_KB
+          spark=$(spark_file "$dir" "$one")
+          [ -z "$spark" ] || cp "$spark" "$LOGS/$name.$stem.spark"
+          if [ -n "$GUARD_FIRED" ]; then
+            caught_p=TAINTED
+            echo "  guard fired on $one: $GUARD_FIRED"
+            break
+          fi
+          if [ "$PROVE_STATUS" -ne 0 ]; then
+            caught_p=FAILED
+            echo "  proof of $one failed: see $LOGS/$name.prove.$stem.log"
+            break
+          fi
+          if ! "$PYTHON" -I "$SPARK_PROOF" proved "$one" \
+                 "$LOGS/$name.$stem.spark" > "$LOGS/$name.proved.$stem.log" 2>&1 \
+             || ! bash "$dir/scripts/check-proof-output.sh" \
+                 >> "$LOGS/$name.proved.$stem.log" 2>&1; then
+            caught_p=ERROR
+            echo "  proof of $one exited 0 without proving every check:" \
+                 "see $LOGS/$name.proved.$stem.log"
+            break
+          fi
+          sed 's/^/  /' "$LOGS/$name.proved.$stem.log"
+        done
+        GUARD_WALL_S=$wall
+        GUARD_PEAK_TREE_KB=$peak
+        ;;
+      *)
+        guarded_prove "$dir" "$unit" "$LOGS/$name.prove.log" \
+          "$LOGS/$name.guard"
+        spark=$(spark_file "$dir" "$unit")
+        if [ -n "$spark" ]; then
+          cp "$spark" "$LOGS/$name.spark"
+          spark="$LOGS/$name.spark"
+        fi
+        if [ -n "$GUARD_FIRED" ]; then
+          caught_p=TAINTED
+          echo "  guard fired: $GUARD_FIRED"
+        else
+          caught_p=$(proof_outcome "$PROVE_STATUS" "$LOGS/$name.prove.log" \
+                       "$unit" "$spark" "$LOGS/$name.judge.log" "$checks")
+          [ ! -f "$LOGS/$name.judge.log" ] \
+            || sed 's/^/  /' "$LOGS/$name.judge.log"
+        fi
+        ;;
+    esac
     case "$expect" in
       *T*)
         status=0
         run_tests "$dir" "$LOGS/$name.tests.log" || status=$?
-        caught_t=$(test_outcome "$status" "$LOGS/$name.tests.log")
+        caught_t=$(test_outcome "$status" "$LOGS/$name.tests.log" \
+                     "$evidence")
         ;;
     esac
   fi
 
   verdict=ok
-  if [ "$caught_p" = ERROR ] || [ "$caught_t" = ERROR ]; then
+  if [ "$caught_p" = ERROR ] || [ "$caught_t" = ERROR ] \
+     || [ "$caught_p" = FAILED ]; then
     verdict=ERROR
     errors=$((errors + 1))
   elif [ "$caught_p" = TAINTED ]; then
@@ -530,13 +740,14 @@ for name in "${names[@]}"; do
   else
     case "$expect" in
       *P*) [ "$caught_p" = yes ] || verdict=MISSED ;;
+      *S*) [ "$caught_p" = no ] || verdict=MISSED ;;
     esac
     case "$expect" in
       *T*) [ "$caught_t" = yes ] || verdict=MISSED ;;
     esac
     [ "$verdict" = ok ] || broken=$((broken + 1))
   fi
-  line=$(printf '%-22s proof:%-7s tests:%-5s must:%-3s %-7s wall:%5ss rss:%8sKB' \
+  line=$(printf '%-26s proof:%-7s tests:%-5s must:%-3s %-7s wall:%5ss rss:%8sKB' \
          "$name" "$caught_p" "$caught_t" "$expect" "$verdict" \
          "$GUARD_WALL_S" "$GUARD_PEAK_TREE_KB")
   echo "  $line"

@@ -40,9 +40,12 @@ It checks the count of the `W-n` rows, not that each row names the right
 place, and `--self-test` runs it against known bypasses. The project's
 `--warnings=error` also makes any unexplained proof warning fail the proof.
 
-**What CI is configured to run, once it has run** (it has not): on each of
-the four platforms the build with checks and contracts, the H′, H₀ and
-compression tests including `--long`, and `scripts/check-h0-object.sh`; the
+**What CI runs** (the first run, on 17 October 2026, passed; the
+release-profile test step below was added after it and has not run on CI
+yet): on each of the four platforms the `validation` build (checks and
+contracts on), the H′, H₀ and compression tests including `--long`, the same
+tests on the `release` build (checks and contracts off; the tests of
+precondition rejection skip themselves there), and `scripts/check-h0-object.sh`; the
 full GNATprove run followed by `scripts/check-proof-output.sh` (and its
 self-test), which fails if a unit was skipped or a check is unproved or
 justified; and, once, `scripts/check-sources.sh` (and its self-test),
@@ -82,10 +85,15 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   versions and the Alire version, the nested `tests/alire.toml` pins
   GNATprove, and the README states them.)
 - **Why believed:** on 14 October 2026, on macOS arm64, the pinned versions
-  pass the test suite built with run-time checks and contracts on (`release`
-  and `validation` both enable them; no checks-off build, optimisation-level
-  matrix or build-matrix script exists, unlike blake2b; Alire's default
-  `development` profile also exists and is not used for any claim). The same
+  pass the test suite built with run-time checks and contracts on (the
+  `validation` profile). The `release` profile builds with optimisation,
+  run-time checks off (`-gnatp`) and contracts off, on the grounds that the
+  proof covers every check `-gnatp` removes (true only for the proved units;
+  the BLAKE2b dependency keeps its own release profile). With contracts off
+  the `Executable` postconditions (the cleanup guarantees) are not run in
+  `release`; their proof is unaffected. No optimisation-level matrix or
+  build-matrix script exists yet, unlike blake2b; Alire's default
+  `development` profile also exists and is not used for any claim. The same
   proof, tests and checks then ran on Linux arm64 and Linux x86_64 in
   containers, on 14 and 15 October 2026, with the same result (GNAT,
   GNATprove and the provers at the pinned versions; the images carry the
@@ -99,15 +107,15 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   none unproved; 1036 s on arm64, 1888 s on amd64), with the margin and
   coverage reports as before (costliest condition 2807 of 5000 steps). The
   long-input tests were not repeated on it. That tree had no compression and
-  the older H′ (chunked input). On 16 October 2026, on macOS arm64, the
+  the older H′ (chunked input). On 17 October 2026, on macOS arm64, the
   current tree (H′ taking a BLAKE2b array of at most 1,024 bytes and proved
-  equal to its model, `Argon2.Blocks`, compression and its model) passes 4236
-  tests, the source gate, and a cold whole-crate proof of 3338 checks with none
+  equal to its model, `Argon2.Blocks`, compression and its model) passes 4240
+  tests, the source gate, and a cold whole-crate proof of 3358 checks with none
   unproved, none
-  justified and no unit skipped (`scripts/check-proof-output.sh`); a fresh
-  Linux run of it is pending. All three runs used a copy of
-  blake2b 0.1.1 beside the crate, not the index. Windows x86_64 has no
-  evidence yet, and CI for the four platforms is configured and has not run.
+  justified and no unit skipped (`scripts/check-proof-output.sh`); the first
+  CI run (17 October 2026) passed the tests and the cold proof on macOS
+  arm64, Linux x86_64 and aarch64, and Windows x86_64, with blake2b 0.1.1
+  from the index. The local runs used a copy beside the crate.
 - **If false:** a proof could hold for a program the compiler does not
   produce. The tests would be the only remaining evidence.
 - **Scope:** all code. A version bump is a signed change.
@@ -117,24 +125,31 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   shipped with GNATprove 16.1.0, never report a false statement proved.
 - **Why believed:** widely used. The crate's proof (`argon2.gpr`, and CI)
   races all three and is limited in steps, not time (`--timeout=0`). On top of
-  that, a local script, `scripts/h0-mutants.sh`, shows at its baseline that
-  every H₀ check is proved by at least two provers each on its own (as run
-  on 14 and 15 October 2026, on macOS arm64 and, on 15 October, on Linux arm64
-  and x86_64: 322 of 360 model checks and 187 or 188 of 207 client checks by
-  all three, the rest by exactly two, none by fewer) and that,
-  for each of its conditions, the cheapest proof found among the single-prover
-  runs costs no more than half the step budget (different conditions of one
-  check may use different provers), and that
-  twelve mutated programs are not proved (the mutants were run on macOS
-  arm64 only; the Linux runs ran the baseline and single-prover runs). That script is **not** run by CI;
+  that, a local script, `scripts/h0-mutants.sh` (the name is old; it covers
+  all six proved units), shows at its baseline that every check of the H₀,
+  H′ and compression units and their models is proved by at least two
+  provers each on its own, and that, for each of its conditions, the cheapest
+  proof found among the single-prover runs costs no more than half the step
+  budget (different conditions of one check may use different provers). Run on
+  macOS arm64 on 17 October 2026: no check is proved by fewer than two
+  provers; the costliest check is H′'s at 3,613 steps against the limit of
+  5,000 (the budget is 10,000). It also shows that twenty-five mutated
+  programs behave as designed: twelve of H₀, and thirteen of compression
+  (nine whose code is wrong and which the proof and the tests both catch, and
+  four where code and model are wrong in the same way, which still prove, the
+  blind spot of S-4, and which the tests catch). Earlier runs: 14 and 15
+  October 2026 for H₀, and a baseline on Linux arm64 and x86_64 on 15 October.
+  Two H₀ mutants are written in a particular form because Z3 runs on in the
+  other (see the script's header). The mutants were run on macOS arm64 only. That script is **not** run by CI;
   all its proof runs (the baseline, the single-prover runs and every mutant)
   also carry a wall-clock timeout (default 300 s) besides the steps, unlike
   the crate's own proof, which has none; and its logs are kept outside the repository (they are gitignored),
   so the repository itself retains no record of the result. The H′ and wipe
-  checks, and blake2b's units on which the H₀ proof depends, are not held to
-  the two-prover rule. The H′ units are set to 10,000 steps per check; run cold
-  they prove at 5,000 and fail at 2,500, a twofold margin, and neither the
-  margin gate nor the two-prover gate has been run on them.
+  checks are held to both gates now. blake2b's units, on which the H₀ proof
+  depends, are not held to the two-prover rule here. The H′ units are set to
+  10,000 steps per check; their costliest check needs 3,613 steps with the cheapest
+  prover, a margin of 2.7 (a check is proved when any one prover proves it
+  within the budget).
 - **If false:** a lemma or postcondition could be false while shown proved.
 - **Scope:** every proved check.
 
@@ -188,11 +203,11 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
     reference's own H₀ code; H′ is checked against the reference's own
     `blake2b_long`, and against CPython (below); compression against the
     reference's own `fill_block`;
-  - for H′, 53 expected outputs computed with CPython's `hashlib.blake2b`
+  - for H′, 55 expected outputs computed with CPython's `hashlib.blake2b`
     straight from RFC 9106 §3.3 (`tests/src/h_prime_vectors.ads`, produced and
     re-checked by `scripts/h-prime-vectors.py`, which the CI `gates` job will
     run). Each is recorded as the 32-byte BLAKE2b digest of the whole output,
-    because outputs reach 2²⁰ + 8 bytes; the test hashes its own output the same
+    because outputs reach 2²⁴ + 8 bytes; the test hashes its own output the same
     way. The input bytes are one formula written twice (the script and
     `tests/src/h_prime_tests.adb`), so the hashing is independent, not the
     inputs. The test-only files are `tests/src/h_prime_tests.ads` and `.adb`
@@ -296,18 +311,18 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   re-examined for the new proof. The code was proved equal to the model, not to
   the RFC: the model is a hand transcription, and a mistake in it would still
   prove. The postcondition is `Static`: proved, never compiled or run (N-5).
-- **Why believed (tested, not proved):** 53 CPython `hashlib` outputs written
+- **Why believed (tested, not proved):** 55 CPython `hashlib` outputs written
   from the RFC text (T-4: inputs of 72 and 1,024 bytes, output lengths 1 to
-  2²⁰ + 8 including the 64/65 boundary and tails that are not multiples of 32,
+  2²⁴ + 8 including the 64/65 boundary and tails that are not multiples of 32,
   and seven short and empty inputs), and the same lengths against the vendored
   official Argon2 C reference's `blake2b_long`, with input lengths 0, 1, 72,
   127, 128, 129, 1,023 and 1,024, output lengths from 1 to 1,025, arbitrary
   bounds, deterministic random inputs, and a test that an input over 1,024
-  bytes is rejected. No test reaches output lengths above 2²⁰ + 8; for those
+  bytes is rejected. No test reaches output lengths above 2²⁴ + 8; for those
   the proof is the only evidence, and it is a proof about the model. No mutation
   suite covers H′ yet. Rests on `Blake2b.Spec` being BLAKE2b (S-2, D-1).
 - **If false:** H′ would be proved equal to the wrong function, or differ from
-  RFC 9106 on an output length above 2²⁰ + 8 where only the model's reading of
+  RFC 9106 on an output length above 2²⁴ + 8 where only the model's reading of
   the RFC stands behind it.
 - **Scope:** `Argon2.H_Prime`, `Argon2.H_Prime_Model`. Not initialisation, the
   fill or the final tag.
@@ -331,8 +346,10 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
 - **Why believed (tested, not proved):** the unmodified reference's
   `fill_block` as oracle (T-4), on the 15 published blocks, every single-word
   position in either input, extreme words, `X` equal to `Y`, pseudo-random
-  pairs, and `Z` equal to `X` or `Y`, in both forms. No mutation suite covers
-  compression yet.
+  pairs, and `Z` equal to `X` or `Y`, in both forms; and thirteen compression
+  mutants (see T-2): the tests catch every one, including the four the proof
+  cannot see because code and model share the mistake. These runs are local
+  and not in CI.
 - **If false:** compression would be proved equal to the wrong function, and
   the tests would be the only evidence against it.
 - **Scope:** `Argon2.Compression`, `Argon2.Compression_Model`. Not the memory
@@ -352,8 +369,8 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   no object-code hardening gate (blake2b has `scripts/check-hardening.sh`);
   nothing checks that wipes or scrubbing exist in the object code.
 - **Compression is not hardened.** `Argon2.Compression` works on blocks of
-  workspace data (derived from the password, salt and key) and holds one local
-  block of working space; it has no wipe, no `strub` and no `zero_call_used_regs`
+  workspace data (derived from the password, salt and key) and takes one
+  block of working space from its caller (`Work`); it has no wipe, no `strub` and no `zero_call_used_regs`
   attribute, and `scripts/check-h0-object.sh` does not look at
   `argon2-compression.o` or `argon2-compression_model.o`. No claim about
   compression's stack or register residue is made. (Hardening and the extended
@@ -376,7 +393,7 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   library no longer controls.
 - **Scope:** macOS arm64, Linux arm64 and Linux x86_64 so far (the object check
   ran in the containers on 14 and 15 October 2026, the last time on the renamed crate); Windows x86_64 and the
-  compilers and targets of CI once it has run (T-1). See also H-2.
+  compilers and targets of CI, whose first run passed it on all four platforms (T-1). See also H-2.
 
 ### H-2 Exceptional and asynchronous exits
 - **Proposition:** none is made. The wipes run on normal completion with the
@@ -438,7 +455,13 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   proves it; `Logical_Equal` on `Same_Block` and `Same_Positions`
   (`src/argon2-compression.adb`) makes the provers substitute array equality,
   and lemmas convert it to ordinary equality. Proof engineering, not
-  assumptions.
+  assumptions. In `Argon2.H_Prime`, `Hide_Info` on `Prefix_Done` (in `Hash`) and
+  on `Blake2b.Spec.Incremental.Update` (in `Initial_Hash`) are local: they only
+  stop the provers unfolding a definition, and two null-body ghost lemmas
+  reopen `Prefix_Done` where a proof needs it. The existing `Hide_Info` on
+  `Message`, `V` and `Tail` in `Argon2.H_Prime_Model` is the same kind. The
+  H′ and compression units were restructured on 17 October 2026 so that every
+  check is proved by two provers each on its own (T-2).
 - **N-2 Static ghost code:** every declaration in `Argon2.H0_Model` is
   `Ghost => Static`, so nothing of it is compiled in any profile. In
   `Argon2.H0`, the static loop invariants of `Absorb_Input` and `Compute` are
@@ -466,8 +489,6 @@ and the proof-judge self-test. It does not run the mutation and coverage suite
   - the separate test-only register this crate's rules ask for, and the
     machine-checked link from this one;
   - an object-code hardening gate for `Compute` and `Hash`;
-  - the proof and the tests of the current tree on Linux and Windows, and in CI
-    (configured, not run);
   - the object-code hardening gate extended to compression, with its
     `Machine_Attribute` rows;
   - `scripts/check-h0-object.sh` extended to the compression objects (and a

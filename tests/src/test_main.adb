@@ -18,6 +18,7 @@ with Interfaces.C;
 with System;
 
 with Argon2; use Argon2;
+with Argon2_Config;
 with Argon2.H_Prime;
 with Blake2b;
 with Blake2b.Hashing;
@@ -52,6 +53,11 @@ procedure Test_Main is
    Passed : Natural := 0;
    Failed : Natural := 0;
    Seed   : Interfaces.Unsigned_32 := 16#C0FFEE#;
+
+   --  Preconditions are checked only when contracts are on (not in the
+   --  release profile); tests of their rejection need that.
+   Contracts_On : constant Boolean :=
+     Argon2_Config.Build_Profile not in Argon2_Config.release;
 
    procedure Check (Condition : Boolean; Label_Text : String) is
    begin
@@ -143,6 +149,11 @@ procedure Test_Main is
       Input : constant Blake2b.Byte_Array := [1, 2, 3];
       Empty : Byte_Array (Byte_Index'Last .. Byte_Index'Last - 1);
    begin
+      if not Contracts_On then
+         Put_Line ("note: contracts are off in this profile; " &
+                   "precondition rejection not tested");
+         return;
+      end if;
       Run_H_Prime (Input, Empty);
       Check (False, "empty output must reject the precondition");
    exception
@@ -157,6 +168,9 @@ procedure Test_Main is
       Input : constant Blake2b.Byte_Array (0 .. 1_024) := [others => 7];
       Output : Byte_Array (0 .. 31);
    begin
+      if not Contracts_On then
+         return;
+      end if;
       Run_H_Prime (Input, Output);
       Check (False, "input over 1,024 bytes must reject the precondition");
    exception

@@ -11,7 +11,7 @@ output is the first 32 bytes of V_1 .. V_r followed by V_(r+1), the
 
 Each case gives the input length, a seed and the output length T. Input
 byte J is (Seed * 37 + J * 13 + (J >> 8) * 7) mod 256; the Ada test builds
-the same input from the same formula. Outputs go up to 2**20 + 8 bytes, so
+the same input from the same formula. Outputs go up to 2**24 + 8 bytes, so
 a case records the 32-byte BLAKE2b digest of the whole output (the test
 hashes its own output the same way).
 
@@ -33,6 +33,9 @@ OUTPUT_LENGTHS = (
     65535, 65536, 65537,
     # 2**20, and 2**20 + 8, whose last link has 40 bytes.
     1048576, 1048584,
+    # 2**24 + 8, whose last link has 40 bytes: the first length where the
+    # top byte of LE32 (T) is not zero (it is 1).
+    16777224,
 )
 # Short and degenerate inputs at the lengths that matter for the tail.
 EXTRA = [(0, 4), (0, 65), (1, 1), (1, 33), (127, 97), (128, 96), (129, 129)]

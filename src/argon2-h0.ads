@@ -36,7 +36,8 @@ is
    --  Hash_State is scratch: the BLAKE2b state that absorbs the password,
    --  salt, secret and associated data. The caller supplies it (it may hold
    --  anything on entry) and owns its cleanup after an abnormal exit; on a
-   --  normal return it has been finalized, which wipes it.
+   --  normal return it has been finalized, which wipes it (the postcondition
+   --  says so).
    procedure Compute
      (Password, Salt, Secret, Associated_Data : Byte_Array;
       Parallelism, Tag_Length, Memory, Passes, Version, Kind :
@@ -46,7 +47,8 @@ is
    with Global => null,
         Pre    => Digest'Length = 64,
         Post   =>
-          (Static =>
+          (Executable => Blake2b.Hashing.Is_Finalized (Hash_State),
+           Static     =>
              Digest
              = H0_Model.H0_Hash
                  (Parallelism, Tag_Length, Memory, Passes, Version, Kind,

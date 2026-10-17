@@ -96,6 +96,21 @@ scan () {
   forbid "SPARK_Mode Off"            'spark_mode ?(=> ?off\b|\( ?off ?\))'
   forbid "Import"                    '\bimport\b'
   forbid "pragma Interface"          'pragma ?interface\b'
+  # Outside comments and strings Ada source is ASCII here. A non-ASCII
+  # byte in code (NEL, LS or PS, say, standing where a space would) would
+  # let a forbidden word hide from the patterns above, so it fails too.
+  local rc_ascii=0 nonascii
+  nonascii=$(perl -ne '
+    my ($f, $t) = split /\t/, $_, 2;
+    print "$f\n" if $t =~ /[^\x00-\x7f]/;' <<< "$normal") || rc_ascii=$?
+  if [ "$rc_ascii" -ne 0 ]; then
+    echo "ERROR: could not check for non-ASCII code"
+    found=1
+  elif [ -n "$nonascii" ]; then
+    echo "FORBIDDEN (non-ASCII character outside a comment or string) in:"
+    printf '  %s\n' $nonascii
+    found=1
+  fi
   # Every suppression pragma: pragma Warnings ([tool,] Off ...); each must
   # carry "Reason =>" before its closing semicolon.
   local sup without
@@ -195,6 +210,11 @@ self_test () {
     'split-pragma-import|yes|PRAGMA\n  IMPORT (C, F, "f");'
     'pragma-interface|yes|pragma Interface (Ada, F);'
     'interface-type|no|type T is interface;'
+    'nel-in-code|yes|pragma\xc2\x85Assume (True);'
+    'ls-in-code|yes|pragma\xe2\x80\xa8Assume (True);'
+    'ps-in-code|yes|pragma\xe2\x80\xa9Assume (True);'
+    'unicode-in-comment|no|-- caf\xc3\xa9\npragma Pure;'
+    'unicode-in-string|no|S : constant String := "caf\xc3\xa9";'
     'cr-ends-comment|yes|-- c\rpragma Assume (True);'
     'vt-ends-comment|yes|-- c\vpragma Assume (True);'
     'ff-ends-comment|yes|-- c\fpragma Assume (True);'

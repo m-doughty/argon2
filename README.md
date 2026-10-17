@@ -29,7 +29,9 @@ will require at least 4 output bytes. The input is absorbed in one piece and
 not copied. The caller supplies the output buffer, and the scratch: `S` is a
 `Blake2b.Hashing.State`, `V` and `Next_V` are 64-byte chain values
 (`Argon2.H_Prime.Chain`). Their contents on entry do not matter; on normal
-return `V` and `Next_V` are zero and `S` has been finalized (which wipes it).
+return `V` and `Next_V` are zero and `S` has been finalized (which wipes it);
+the postcondition says so, and it is proved, so a SPARK caller can rely on it.
+`H0.Compute` likewise states that its `Hash_State` is finalized on return.
 Input and output must not overlap. Byte P of `Digest` is byte P of H′ as
 `Argon2.H_Prime_Model` writes RFC 9106 §3.3, for every P (the postcondition;
 see "H′: what is proven, tested and trusted" below).
@@ -102,12 +104,13 @@ missing total (`--self-test` runs it against bad inputs).
 
 Build before invoking GNATprove: Alire generates the project configuration
 files during the build. GNATprove is a dependency of the nested test crate,
-so library consumers do not install it. Runtime checks and contracts remain
-enabled in this initial milestone. The default run (4,236 tests, 16 October
+so library consumers do not install it. The `release` profile drops run-time checks and
+contracts (the proof covers the checks; see [TRUST.md](TRUST.md) T-1); the
+`validation` profile keeps both on, and the tests run on it. The default run (4,240 tests, 17 October
 2026, macOS arm64) compares H′ against the
 [vendored official Argon2 C reference](tests/ref/README.md) and against
 CPython-generated vectors, including input lengths 0, 1, 72, 127, 128, 129,
-1,023 and 1,024, output lengths from 1 byte to 2²⁰ + 8, arbitrary bounds and
+1,023 and 1,024, output lengths from 1 byte to 2²⁴ + 8, arbitrary bounds and
 deterministic random inputs, and checks that an input over 1,024 bytes is
 rejected. It compares `Argon2.Compression` word for word with the
 reference's own compression function.
@@ -128,7 +131,7 @@ Several more commands are not part of the default run:
   `hashlib`, is what the script generates (run it without `--check` to
   regenerate).
 - `python3 -I scripts/h-prime-vectors.py --check` checks that
-  `tests/src/h_prime_vectors.ads`, 53 H′ outputs (recorded as the BLAKE2b digest
+  `tests/src/h_prime_vectors.ads`, 55 H′ outputs (recorded as the BLAKE2b digest
   of each whole output) computed with CPython's `hashlib` from RFC 9106 §3.3, is
   what the script generates (run it without `--check` to regenerate).
 - `python3 -I scripts/compression-vectors.py --check` checks that
@@ -136,8 +139,11 @@ Several more commands are not part of the default run:
   own known-answer files (`tests/ref/kat-blocks.json`), is what the script
   generates, and that each block is the compression of two other blocks of the
   same file (run it without `--check` to regenerate).
-- `bash scripts/h0-mutants.sh` runs the H0 mutation suite (see its header;
-  `--selftest` checks its test classifier alone).
+- `bash scripts/h0-mutants.sh` runs the mutation suite for the H0, H′ and
+  compression units, after a baseline that checks the step margin and that
+  two provers each prove every check alone (see its header; `--selftest`
+  checks its test classifier alone). It takes tens of minutes and is not run
+  by CI.
 
 For H′ and for compression the proofs establish equality with the crate's
 own model of the RFC's function (`Argon2.H_Prime_Model`,
@@ -213,28 +219,31 @@ specification against RFC 7693.
   fields, a missing length field, a dropped last chunk, the rounded m′ in
   place of m, P and S copied in each other's place, a missing bridge step,
   and model mutants. Each is caught by the proof at the check its entry
-  names, and each mutant of compiled code by an H0 test too.
+  names, and each mutant of compiled code by an H0 test too. For
+  compression, thirteen more: nine with wrong code (a rotation constant or
+  direction, the factor 2 of fBlaMka, a diagonal index, the pass order, the
+  register view, the final XOR, the XOR with the old block) caught by the
+  proof and the tests, and four where the code and the model are wrong the
+  same way, which the proof cannot catch and the tests do.
 
 **Trusted.** The proofs rest on blake2b 0.1.1: its streaming theory, its
 `TRUST.md` (including note N-2: the whole-stream lemmas read
 `Blake2b.Hashing.Max_Input`'s private completion through proof
 visibility), and its specification, which its own tests validate against
 BLAKE2b; and on the toolchain (GNATprove, its provers, GNAT). The crate's
-own [TRUST.md](TRUST.md) lists all of it, unsigned: six GNATprove warning
+own [TRUST.md](TRUST.md) lists all of it, unsigned: five GNATprove warning
 suppressions, each with its reason (the ignored `Machine_Attribute` pragmas
 in `argon2-h0.ads`, `argon2-h0.adb`, `argon2-h_prime.ads`,
-`argon2-h_prime.adb` and `argon2-wipe.ads`, and the finalized state that
-`Compute` does not read after `Finish`), the test-only C code, and what is
-not proved.
+`argon2-h_prime.adb` and `argon2-wipe.ads`), the test-only C code, and what
+is not proved.
 
 **Scope limits.** H0, H′ and block compression only (internal building
 blocks): no Argon2 password hashing, no parameter validation, no memory
 filling. Beyond 2³¹ bytes the proved statement is equality with
 `Logical_Hash`, blake2b's model of a long stream, which is tied to
 `Blake2b.Spec.Hash` wherever one array holds the message and is not itself
-proven against RFC 7693. The proof has been run on macOS arm64 on the current tree, and on Linux arm64
-and x86_64 on an earlier one; Windows x86_64 has no evidence yet and CI has not
-run. The
+proven against RFC 7693. The first CI run (17 October 2026) passed the tests and the cold
+proof on macOS arm64, Linux x86_64 and aarch64, and Windows x86_64. The
 long tests exercise the maximum length and the 2³¹ boundaries once each.
 Buffers are wiped and the stack-scrubbing and register-clearing attributes
 are requested as for H′ (see "Zeroization boundary" in
@@ -245,10 +254,10 @@ compression objects.
 ## H′: what is proven, tested and trusted
 
 **Proven** (GNATprove 16.1.0, from cold, step limits only; whole crate, macOS
-arm64, 16 October 2026: 3338 checks, none unproved, none justified, no unit
-skipped; the H′ units are held to 10,000 steps per check, but run cold they prove
-at 5,000 and fail at 2,500, a twofold margin, and the margin gate has not been
-run on them; no `pragma Assume`, no `Import`, no `SPARK_Mode => Off`):
+arm64, 17 October 2026: 3358 checks, none unproved, none justified, no unit
+skipped; the H′ units are held to 10,000 steps per check and their costliest
+check needs 3,613 with the cheapest prover, a margin of 2.7, checked by the
+margin gate; no `pragma Assume`, no `Import`, no `SPARK_Mode => Off`):
 
 - **The output.** After `Hash (Input, Digest, …)`, byte P of `Digest` is
   `Argon2.H_Prime_Model.Out_Byte (Input, Digest'Length, P)` for every P, for
@@ -261,7 +270,8 @@ run on them; no `pragma Assume`, no `Import`, no `SPARK_Mode => Off`):
   of blake2b 0.1.1 and relates the k-th value of the loop to the model's
   V(k + 1); it never unfolds the chain (up to 2²⁷ links).
 - **The input bound.** Inputs over 1,024 bytes violate the precondition.
-- No run-time error, termination, and zero in the chain values after their wipe.
+- No run-time error, termination, and zero in the chain values and a finalized state on return (public
+  postconditions of `Hash` and of `H0.Compute`).
 
 The model is static ghost code: proved, never compiled, never run, and so is the
 postcondition that states the result. No test runs it.
@@ -272,17 +282,17 @@ the RFC's is **tested**.
 
 **Tested** (`tests/src/h_prime_tests.adb`, `tests/src/test_main.adb`):
 
-- 53 H′ outputs computed by CPython's `hashlib.blake2b` straight from the RFC
+- 55 H′ outputs computed by CPython's `hashlib.blake2b` straight from the RFC
   text (`scripts/h-prime-vectors.py`): inputs of 72 and 1,024 bytes at output
   lengths 1, 4, 31, 32, 33, 63, 64, 65, 66, 95, 96, 97, 127, 128, 129, 1,023,
-  1,024, 1,025, 2¹⁶ ± 1, 2²⁰ and 2²⁰ + 8 (the last link of the chain has a
+  1,024, 1,025, 2¹⁶ ± 1, 2²⁰, 2²⁰ + 8 and 2²⁴ + 8 (the last link of the chain has a
   length that is not a multiple of 32, which a truncating variant gets wrong),
   and seven short and empty inputs.
 - The same lengths against the vendored official reference's `blake2b_long`,
   byte for byte, and its comparison loop over input lengths 0, 1, 72, 127, 128,
   129, 1,023 and 1,024, output lengths from 1 to 1,025, arbitrary bounds and
   random inputs; an input over 1,024 bytes is rejected.
-- Output lengths beyond 2²⁰ + 8 (up to 2³²−1) are covered by the proof only; no
+- Output lengths beyond 2²⁴ + 8 (up to 2³²−1) are covered by the proof only; no
   test reaches them.
 
 **Trusted.** `H_Prime_Model` as the RFC's function ([TRUST.md](TRUST.md) S-3),
@@ -298,7 +308,7 @@ by the caller so that a future cleanup guard can reach them; no guard exists yet
 ## Block compression: what is proven, tested and trusted
 
 **Proven** (GNATprove 16.1.0, from cold, step limits only; whole crate, macOS
-arm64, 16 October 2026: 3338 checks, none unproved, none justified, no unit
+arm64, 17 October 2026: 3358 checks, none unproved, none justified, no unit
 skipped; the compression units are held to 10,000 steps per check, and every
 check proved at 2,500 in the run that set that limit, though the margin gate
 has not yet been run on them; no `pragma Assume`, no `Import`, no

@@ -27,7 +27,7 @@ storage. This bound excludes the caller's input, output and scratch buffers.
 ## H′: proof obligations
 
 GNATprove 16.1.0 proves the H′ and wipe bodies with the crate's configured
-options (whole-crate proof on 16 October 2026: 3338 checks, none unproved or
+options (whole-crate proof on 17 October 2026: 3358 checks, none unproved or
 justified). There are no `pragma Assume` statements. The source contracts and
 invariants establish:
 
@@ -50,9 +50,9 @@ a BLAKE2b with a digest length of T − 32r). The proof goes through blake2b's
 contracts for `Init`, `Update` and `Final`. It is a proof that the code equals
 the model, **not** that the model is the RFC's function: a mistake in the
 model would still prove. That the model is the RFC's function is tested, against
-the official Argon2 C reference's `blake2b_long` and against 53 outputs
+the official Argon2 C reference's `blake2b_long` and against 55 outputs
 computed with CPython, for inputs of 72 and 1,024 bytes and output lengths up
-to 2²⁰ + 8. Output lengths above that are covered by the proof only. The model
+to 2²⁴ + 8. Output lengths above that are covered by the proof only. The model
 and the postcondition are static ghost code: proved, never compiled or run.
 
 ## Compression

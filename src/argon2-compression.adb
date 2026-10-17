@@ -302,6 +302,8 @@ is
               (if I /= Z and then M'Loop_Entry (I)'Initialized
                then M (I)'Initialized));
          pragma Loop_Invariant
+           (Static => M (Z) (K) = T (K));
+         pragma Loop_Invariant
            (Static =>
               (for all J in Word_Index range 0 .. K =>
                  M (Z) (J) = T (J)));
