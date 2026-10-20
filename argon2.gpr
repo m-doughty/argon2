@@ -56,6 +56,12 @@ project Argon2 is
       --  10000 leaves a margin of 2.7.
       for Proof_Switches ("argon2-h_prime.adb") use ("--steps=10000");
       for Proof_Switches ("argon2-h_prime_model.ads") use ("--steps=10000");
+      --  Geometry: every check proves in 1 step with its cheapest prover;
+      --  the indexing model: in 2 steps. 10000 leaves a margin of 5000.
+      --  Each prover alone, the model's dearest check takes 2 steps with
+      --  Z3, 2701 with CVC5 and 8282 with Alt-Ergo.
+      for Proof_Switches ("argon2-geometry.adb") use ("--steps=10000");
+      for Proof_Switches ("argon2-indexing_model.adb") use ("--steps=10000");
    end Prove;
 
 end Argon2;

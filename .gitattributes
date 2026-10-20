@@ -1,0 +1,29 @@
+# Line endings: LF in the repository and in every working tree.
+#
+# `text=auto` keeps git's own text-or-binary detection; `eol=lf` then
+# checks every text file out with LF on every platform, whatever
+# `core.autocrlf` says locally. A Windows checkout gets the same bytes as
+# a macOS or Linux one, and the scripts and hooks keep running.
+* text=auto eol=lf
+
+# Vendored third-party reference files are kept byte-for-byte as
+# published upstream. Never converted, in either direction.
+tests/ref/** -text
+
+# cmd.exe mis-parses an LF-only batch file, so batch files are the one
+# kind of text that must reach the disk as CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never converted, never diffed as text.
+*.gz     binary
+*.tgz    binary
+*.zip    binary
+*.tar    binary
+*.a      binary
+*.so     binary
+*.dylib  binary
+*.dll    binary
+*.lib    binary
+*.exe    binary
+*.pdf    binary

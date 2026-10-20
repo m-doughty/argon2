@@ -65,6 +65,18 @@ crate's static ghost transcription of RFC 9106 §§3.5 and 3.6. That the model
 is the RFC's function is tested against the official reference's compression
 function, not proved. See the README and `TRUST.md` S-4.
 
+## Indexing
+
+`Argon2.Indexing_Model` is this crate's static ghost transcription of RFC 9106
+§3.4.1 and §3.4.2 (the pseudo-random value, the address blocks, the reference
+lane and index), with `Argon2.Geometry` (§3.2's rounding to m′ blocks, the
+positions that are computed, and which take their value from an address
+block). Proved: the reference is a block of the memory and lies in the
+window of blocks already written; `Shape_Of` meets its postcondition. Not
+proved, and so far not tested in this repository: that the model is the
+RFC's indexing. No indexing code exists yet. See the README and `TRUST.md`
+S-5.
+
 ## Zeroization boundary
 
 On normal return, the BLAKE2b finalization API wipes its state, and the

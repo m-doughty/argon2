@@ -464,4 +464,47 @@ Linux aarch64 (an earlier version of the script) none. The script measures
 this and does not gate it; nothing prevents it (see [TRUST.md](TRUST.md)
 H-2).
 
+## Indexing: what is proven, tested and trusted
+
+So far this is the model only: `Argon2.Geometry` (the memory's shape and
+positions) and `Argon2.Indexing_Model` (which earlier block each position is
+compressed with, and the address blocks, RFC 9106 §3.4). No code computes a
+reference yet, and nothing public uses either unit.
+
+**Proven** (GNATprove 16.1.0, from cold, step limits only; whole crate, macOS
+arm64, 20 October 2026: 3671 checks, none unproved, none justified, no unit
+skipped; both units are held to 10,000 steps per check, every check is
+proved by two provers each on its own, and the margin gate passes; no
+`pragma Assume`, no `Import`, no `SPARK_Mode => Off`):
+
+- **`Shape_Of`.** The shape of p lanes and m KiB has m′ = 4p·⌊m / 4p⌋
+  blocks, a segment of at least 2 blocks, and at most 2³² − 1 blocks.
+- **The reference is a block of the memory.** For every computed position
+  (not the first two blocks of a lane) and every 64-bit W: the area is not
+  empty, the reference lane is one of the p lanes (the block's own in pass 0,
+  slice 0), and the reference index is in the lane. The products J₁² and
+  area·x are taken in mathematical integers.
+- **The window.** The reference is a block already written and not the
+  previous one: in pass 0, a block before the previous one in the own lane,
+  or one of another lane's finished segments (less the last block when the
+  position is the first of its segment); in later passes, any block but the
+  rest of the own segment and the previous block, or, in another lane, any
+  but the current slice (and its block before it, for the first position).
+  This is the safety property the memory fill will rely on, not the RFC's
+  exact choice: an area wrong by a block that stays inside the window would
+  still prove.
+
+The model is static ghost code: proved, never compiled, never run.
+
+**Tested.** Nothing in the crate's tests yet: no code exists to test. That the
+model is RFC 9106's indexing was checked outside this repository, by
+replaying a transcription of it over the official reference's published
+memory dumps and against the reference's own memory fill (segment lengths
+up to 1,024, one to five lanes); the tests of the indexing code will be
+against the reference's own functions.
+
+**Trusted.** `Indexing_Model` and `Geometry` as RFC 9106's reference
+selection and address blocks ([TRUST.md](TRUST.md) S-5), the big-integer
+proof model (T-3), and the toolchain.
+
 Licensed under [BSD-3-Clause](LICENSE).

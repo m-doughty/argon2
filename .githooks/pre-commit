@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Pre-commit hook: runs the repository's gates on the staged content,
+# which is what the commit will record, and refuses the commit if one
+# fails. The index is written out to a fresh temporary directory and the
+# gates run from there, so both the content they check and the gate
+# scripts themselves are the staged ones, whatever the working tree
+# holds. A gate that is not staged is refused. The copy stands two
+# directories down in the temporary directory, so that a gate that looks at
+# the directories around the repository finds none of the others there. Install it once per clone:
+#
+#   git config core.hooksPath .githooks
+#
+# It can also be run by another hook manager as ./.githooks/pre-commit from
+# the top of the work tree. It prints only the gates' own output and fixed
+# messages, and exits 1 when anything is refused.
+
+set -u
+export LC_ALL=C
+unset LANG LANGUAGE LC_CTYPE LC_COLLATE LC_MESSAGES LC_MONETARY LC_NUMERIC \
+  LC_TIME LC_ADDRESS LC_IDENTIFICATION LC_MEASUREMENT LC_NAME LC_PAPER \
+  LC_TELEPHONE 2> /dev/null || true
+
+gates="scripts/check-sources.sh"
+
+if ! top=$(git rev-parse --show-toplevel 2> /dev/null) || [ -z "$top" ]; then
+  echo "ERROR: pre-commit: not in a git work tree"
+  exit 1
+fi
+if ! cd "$top" 2> /dev/null; then
+  echo "ERROR: pre-commit: cannot enter the work tree"
+  exit 1
+fi
+if { [ -n "${TMPDIR:-}" ] && [ ! -d "$TMPDIR" ]; } \
+   || ! tmp=$(mktemp -d 2> /dev/null) || [ -z "$tmp" ]; then
+  echo "ERROR: pre-commit: cannot create a temporary directory"
+  exit 1
+fi
+cleanup () {
+  rm -rf "$tmp" 2> /dev/null
+}
+trap cleanup EXIT
+
+for g in $gates; do
+  if ! git cat-file -e ":$g" 2> /dev/null; then
+    echo "REFUSED: pre-commit: a gate script is not in the index"
+    exit 1
+  fi
+done
+if ! git checkout-index -a -f --prefix="$tmp/a/b/tree/" 2> /dev/null; then
+  echo "ERROR: pre-commit: cannot write out the index"
+  exit 1
+fi
+
+status=0
+for g in $gates; do
+  (cd "$tmp/a/b/tree" && bash "$g") || status=1
+done
+exit "$status"

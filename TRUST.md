@@ -23,7 +23,7 @@ hardening attributes give and what they do not.
 | Trusted definitions | none | would need one each |
 | Warning suppressions | W-1, W-4, W-6, W-7 (`pragma Warnings`; W-2, W-3 and W-5 retired); see also N-4 | no, each has a recorded `Reason` |
 | Toolchain and proof model | T-1 to T-3 | a bump is a signed change |
-| The specification | S-1 to S-4 | listed |
+| The specification | S-1 to S-5 | listed |
 | Not proved | H-1 (wiping), H-2 (abnormal exits), H-3 (secrets held outside a future cleanup guard) | listed |
 | Test-only trust (C oracles, `Import`ed C in `tests/`, CPython-generated vectors, published block vectors) | T-4 | listed; the separate tests register this crate's rules ask for does not exist yet |
 
@@ -80,6 +80,7 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 | S-2 | Specification | `Blake2b.Spec` is RFC 7693, and `Logical_Hash` is BLAKE2b beyond 2³¹ bytes | unsigned |
 | S-3 | Specification | `Argon2.H_Prime_Model` is RFC 9106 §3.3 | unsigned |
 | S-4 | Specification | `Argon2.Compression_Model` is RFC 9106 §§3.5, 3.6 | unsigned |
+| S-5 | Specification | `Argon2.Indexing_Model` and `Argon2.Geometry` are RFC 9106 §§3.4.1, 3.4.2 and §3.2's m′ | unsigned |
 | H-1 | Not proved | wipes, register and stack clearing | unsigned |
 | H-2 | Not proved | exceptional and asynchronous exits | unsigned |
 | H-3 | Not proved | the cleanup guard does not exist yet; BLAKE2b's own compression locals will stay outside it | unsigned |
@@ -389,6 +390,39 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   the tests would be the only evidence against it.
 - **Scope:** `Argon2.Compression`, `Argon2.Compression_Model`. Not the memory
   fill, indexing or the final tag.
+
+### S-5 Indexing
+- **Proposition:** `Argon2.Indexing_Model`, with `Argon2.Geometry`'s
+  `M_Prime`, `Shape_Of`, `Computed` and `Data_Independent`, is RFC 9106's
+  reference selection and address-block construction (§§3.4.1 and 3.4.2):
+  W from the previous block or from the address block
+  `G (ZERO, G (ZERO, Z))`, J₁ and J₂, the reference lane, the area, the
+  start and the index; and §3.2's rounding of m to m′ blocks. Where the RFC
+  leaves a point open, the model follows the official reference: the number
+  of address blocks a segment needs (⌈s / 128⌉), the area listed from its
+  first block cyclically, and in pass 0 every finished segment rather than
+  "the last 3". Not the pass, slice and lane loops, nor the compression of
+  each block.
+- **What is proved:** `Shape_Of` returns p lanes, t passes, a segment of at
+  least 2 and m′ = 4p·⌊m / 4p⌋ blocks. For every computed position and every
+  64-bit W, the model's reference is a block of the memory and lies in the
+  window of blocks already written, never the block being made or the one
+  before it (the README states the window). No code is proved equal to the
+  model yet.
+- **Why believed (tested, not proved):** a transcription of the same rules,
+  replayed over the official reference's published memory dumps (all
+  blocks of every pass, the three variants) and against the reference's own
+  memory fill at segment lengths it cannot reach (up to 1,024, one to five
+  lanes); this replay is not in this repository. The model was also read
+  against the reference's `index_alpha` and `next_addresses`. The tests of
+  the indexing code will call those two functions directly; the reference
+  will check the choice of lane only through a whole-memory comparison,
+  once the fill exists.
+- **If false:** the indexing code would be proved equal to the wrong rule,
+  and only the tests would show it; the window would still be proved, so
+  the fill would still read only written blocks.
+- **Scope:** `Argon2.Indexing_Model`, `Argon2.Geometry`. Not the memory
+  fill, the order of the loops or the final tag.
 
 ### H-1 Wiping, registers and stack
 - **Proposition:** on normal return, `Argon2.H0.Compute` and
