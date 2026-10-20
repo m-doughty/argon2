@@ -7,7 +7,7 @@
 # measured here, and the normal return is gated.
 #
 # What is measured. The script copies the library's sources and those of
-# its BLAKE2b dependency (the release Alire deployed for tests/, never
+# its BLAKE2b dependency (the version Alire deployed for tests/, never
 # written to) into a scratch directory (obj/exception-stack/, which git
 # ignores) and builds copies of them with a driver
 # (scripts/exception-stack/) through Alire, the library in its release or
@@ -43,8 +43,9 @@
 #   C  Argon2.H_Prime.Hash, with the raise inside BLAKE2b's compression
 #      (Blake2b.Core.Compress, after round 6 of 12; it fires when the
 #      byte counter T_Lo = 1024, the last block of a 1024-byte message,
-#      so during Blake2b.Hashing.Final); its shipped-sources run hashes
-#      that 1,024-byte message, which nothing interrupts there.
+#      so during Blake2b.Hashing.Final, into whose scrubbed body
+#      blake2b inlines Compress); its shipped-sources run hashes that
+#      1,024-byte message, which nothing interrupts there.
 #
 # The driver (scripts/exception-stack/src/exception_stack.adb) keeps every
 # input and output on the heap, so no frame of its own holds a canary. The
@@ -54,9 +55,10 @@
 # output); for B and C, BLAKE2b's message words 1 to 126 (M: the input as
 # BLAKE2b loads it, after the 4-byte length prefix) and the input's own
 # 8-byte words (I: these straddle two message words, so an I hit at an
-# unaligned offset between two adjacent M hits is the same bytes again;
-# the number of distinct M words is the figure). From one helper frame
-# the driver zeroes the region of stack below that frame, calls the
+# unaligned offset between two adjacent M hits is the same bytes again,
+# so the report also gives the number of distinct words of each class).
+# From one helper frame the driver zeroes the region of stack below that
+# frame, calls the
 # hardened subprogram, then copies the same region with volatile reads and
 # counts every occurrence of every canary, at 8-byte-aligned offsets and
 # at the others (byte-wise); depths are counted in bytes below the helper
@@ -72,9 +74,12 @@
 # deepest byte written must lie inside the region with 256 bytes to
 # spare; if not, the runs are repeated with the region doubled, up to
 # 256 KiB (an exception's propagation writes much more stack than the
-# call itself). The driver runs REPEATS (5) times per build, as separate
-# processes: the counts can differ from one process to the next, and the
-# report gives each; a "hits" figure below is the most of any repeat.
+# call itself). The hits of a discarded batch are kept, tagged
+# repeat=d<batch>-<n>, and counted like any repeat; "stack written up to"
+# and the bookkeeping check are of the final batch only. The driver runs
+# REPEATS (5) times per build, as separate processes: the counts can differ
+# from one process to the next, and the report gives each; a "hits" figure
+# below is the most of any repeat.
 #
 # Positive controls, one per mode. The control is the same copy with the
 # strub and zero_call_used_regs pragmas removed from the library and from
@@ -86,37 +91,25 @@
 #   normal, A        the control's normal return of compression has left
 #                    no canary wherever it was measured (its own code
 #                    leaves none to find), so it cannot show that the scan
-#                    would see residue there; A' does: its control must
+#                    would see a canary there; A' does: its control must
 #                    leave canaries, or compression's normal-return results
 #                    (A and A') are BLIND and the script fails (exit 1);
-#   normal, B and C  compared with the control's normal return in the same
-#                    kind of build (a regression guard, below); where the
-#                    control leaves none and the hardened build none, both
-#                    are reported as such ("not a discriminating control")
-#                    and that passes (as in the validation profile on
-#                    macOS arm64 and Linux aarch64): the crate claims no
-#                    absence of residue for these frames, and a control
-#                    that leaves none cannot be exceeded without failing.
+#   normal, B and C  the control's normal return in the same kind of
+#                    build is reported beside the hardened build's; where
+#                    both leave none, the result is reported as "the
+#                    control is not discriminating here": such a control
+#                    does not show that the scan would see a canary there
+#                    (a hardened hit fails whatever the control left).
 # For A a second control also removes flatten; it is reported, not judged.
 #
 # What is gated (normal returns only; H-2 claims nothing for an
 # exception, so hits after an exception are reported and never change the
-# exit status):
-#   A and A'  the hardened build must leave no canary after a normal
-#             return (shipped and injected builds, and the spill);
-#   B and C   the hardened build may leave canaries after a normal return
-#             in the frame of BLAKE2b's own compression, which this crate
-#             does not scrub (a known residue, TRUST.md H-1 and H-3), but
-#             no more than its control in distinct message words
-#             (shipped build against shipped control, injected against
-#             injected); the residue is printed as such.
-# The rule is "fail on any hit" (Matt, 2026-10-17), within the scope of
-# the claim: every frame this crate scrubs (A, A', and the crate's own
-# frames in B and C) must leave none. BLAKE2b's compression frame is
-# outside the claim (another repository), so its residue is measured and
-# capped at the control's, not failed. With STRICT_NORMAL=1, ANY canary a
-# hardened build leaves after a normal return fails (exit 3), that residue
-# included; it stays red until BLAKE2b scrubs its own frame.
+# exit status): a hardened build must leave no canary after a normal
+# return, in every case (A, A', B and C; shipped and injected builds, and
+# the spill). The rule is "fail on any hit" (Matt, 2026-10-17). From
+# blake2b 0.1.2, BLAKE2b's compression is inlined into its scrubbed entry
+# points (Init, Update and Final), so in B and C it runs inside a
+# scrubbed body too.
 #
 # Task abort (scripts/exception-stack/src/abort_stack.adb, on the shipped
 # sources): the environment task calls Compress over and over in the
@@ -136,19 +129,17 @@
 # Exit status:
 #   0  every gated result passed, and A' saw its control's canaries;
 #   1  a harness error, or a normal-return control that is blind (A');
-#   3  a hardened build left canaries after a normal return where the
-#      crate claims none (A, A'), or more than its control (B, C), or,
-#      with STRICT_NORMAL=1, any canary after a normal return.
+#   3  a hardened build left a canary after a normal return (any case).
 # A notice "exception results unmeasured" names each case whose control
 # left no canary after the exception; it does not change the status.
 #
 # Usage: bash scripts/check-exception-stack.sh [profile ...]
 #        ALR=/path/to/alr PROBE_KIB=16 REPEATS=5 ABORT_TRIALS=3 \
-#          STRICT_NORMAL=0 CASES='A B C T' \
-#          bash scripts/check-exception-stack.sh release
+#          CASES='A B C T' bash scripts/check-exception-stack.sh release
 # (CASES: the cases to run, A including A', T the task abort; default
 # all.) It runs alr itself (not inside `alr exec`), after tests/ has been
-# built once (it reads the BLAKE2b release Alire deployed for tests/).
+# built once (it reads the BLAKE2b version Alire deployed for tests/, which
+# must be the one alire.toml asks for, at the commit it pins, if it pins one).
 
 set -euo pipefail
 
@@ -158,7 +149,6 @@ SPACER_KIB=8
 ABORT_TRIALS=${ABORT_TRIALS:-3}
 REPEATS=${REPEATS:-5}
 CASES=${CASES:-A B C T}
-STRICT_NORMAL=${STRICT_NORMAL:-0}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK="$ROOT/obj/exception-stack"
 DRIVER="$ROOT/scripts/exception-stack"
@@ -182,10 +172,14 @@ esac
 case $ABORT_TRIALS in
   ''|*[!0-9]*|0) harness_error "ABORT_TRIALS must be a positive number" ;;
 esac
-case $STRICT_NORMAL in
-  0|1) ;;
-  *) harness_error "STRICT_NORMAL must be 0 or 1" ;;
-esac
+# STRICT_NORMAL was a switch of an earlier version of this script; any
+# canary after a normal return now fails. Set to 1 (what it asked for) it
+# changes nothing; set to anything else it asks for a rule that is gone.
+if [ -n "${STRICT_NORMAL+set}" ] && [ "$STRICT_NORMAL" != 1 ]; then
+  harness_error "STRICT_NORMAL='$STRICT_NORMAL': the switch is gone; any" \
+    "canary a hardened build leaves after a normal return fails (exit 3)." \
+    "Unset it (or set it to 1, which changes nothing)"
+fi
 for profile in "$@"; do
   case $profile in
     release|validation) ;;
@@ -288,8 +282,60 @@ if command -v cygpath > /dev/null 2>&1; then
 fi
 [ -f "$blake2b_dir/alire.toml" ] && [ -d "$blake2b_dir/src" ] \
   || harness_error "BLAKE2b sources not found (BLAKE2B_ALIRE_PREFIX=$blake2b_dir)"
-grep -q '^version = "0.1.1"' "$blake2b_dir/alire.toml" \
-  || harness_error "the deployed BLAKE2b is not version 0.1.1"
+# The deployed BLAKE2b must be the version alire.toml asks for (exactly,
+# "=X"). If alire.toml pins blake2b to a commit (in [[pins]]: url and a
+# 40-hex commit), the deployed directory must be a git checkout of that
+# commit with no modified tracked file, and its version is X or X-dev (what
+# a commit of X carries before the release); without a pin it is X.
+blake2b_version=$(tr -d '\r' < "$ROOT/alire.toml" \
+  | sed -n 's/^blake2b = "=\([0-9][0-9.]*\)"$/\1/p')
+case $blake2b_version in
+  ''|*[!0-9.]*) harness_error "alire.toml asks for no exact BLAKE2b version" \
+                  "(want one line blake2b = \"=X\")" ;;
+esac
+blake2b_pin=$(tr -d '\r' < "$ROOT/alire.toml" \
+  | awk '/^\[/ { pins = ($0 == "[[pins]]") } pins && /^blake2b *=/')
+pinned_commit=""
+if [ -n "$blake2b_pin" ]; then
+  pinned_commit=$(printf '%s\n' "$blake2b_pin" | sed -n \
+    's/^blake2b = { url = "[^"]*", commit = "\([0-9a-f]\{40\}\)" }$/\1/p')
+  [ -n "$pinned_commit" ] \
+    || harness_error "alire.toml pins blake2b in a form this script does not" \
+         "read (want blake2b = { url = \"...\", commit = \"<40 hex>\" })"
+fi
+deployed_version=$(tr -d '\r' < "$blake2b_dir/alire.toml" \
+  | sed -n 's/^version = "\(.*\)"$/\1/p')
+deployed_commit=""
+if [ -n "$pinned_commit" ]; then
+  command -v git > /dev/null 2>&1 \
+    || harness_error "git not found (alire.toml pins blake2b to a commit)"
+  [ -e "$blake2b_dir/.git" ] \
+    || harness_error "the deployed BLAKE2b is not a git checkout" \
+         "(alire.toml pins it to commit $pinned_commit)"
+  deployed_commit=$(git -C "$blake2b_dir" rev-parse HEAD 2> /dev/null \
+                      | tr -d '\r') \
+    || harness_error "git rev-parse failed in the deployed BLAKE2b" \
+         "($blake2b_dir)"
+  [ "$deployed_commit" = "$pinned_commit" ] \
+    || harness_error "the deployed BLAKE2b is at commit '$deployed_commit';" \
+         "alire.toml pins it to commit $pinned_commit"
+  modified=$(git -C "$blake2b_dir" status --porcelain --untracked-files=no \
+               2> /dev/null | tr -d '\r') \
+    || harness_error "git status failed in the deployed BLAKE2b" \
+         "($blake2b_dir)"
+  [ -z "$modified" ] \
+    || harness_error "the deployed BLAKE2b sources are modified (commit" \
+         "$deployed_commit; git status: $modified)"
+  case $deployed_version in
+    "$blake2b_version"|"$blake2b_version-dev") ;;
+    *) harness_error "the deployed BLAKE2b is version '$deployed_version';" \
+         "alire.toml asks for $blake2b_version" ;;
+  esac
+else
+  [ "$deployed_version" = "$blake2b_version" ] \
+    || harness_error "the deployed BLAKE2b is version '$deployed_version';" \
+         "alire.toml asks for exactly $blake2b_version (no pin)"
+fi
 
 compiler=$("$ALR" -n -C "$ROOT/tests" exec -- gcc --version | head -n 1 | tr -d '\r')
 platform="$(uname -s) $(uname -m)"
@@ -302,10 +348,8 @@ say "measured: the shipped sources (normal returns), copies with one" \
     "when the call needs more); depths are counted from the helper frame"
 say "hits are given per class as aligned/unaligned/distinct words, then" \
     "class@depth#word for the first ones"
-if [ "$STRICT_NORMAL" = 1 ]; then
-  say "STRICT_NORMAL=1: any canary left by a hardened build after a normal" \
-      "return fails (exit 3)"
-fi
+say "BLAKE2b $deployed_version${deployed_commit:+ at commit $deployed_commit}" \
+    "(alire.toml asks for =$blake2b_version)"
 
 # The sources as shipped, then one build tree per variant: the injected
 # and spill copies are rebuilt for each case, the shipped ones once per
@@ -313,7 +357,10 @@ fi
 rm -rf "$WORK"
 mkdir -p "$WORK/sources/argon2" "$WORK/sources/blake2b"
 copy_sources "$ROOT/src" "$WORK/sources/argon2/src"
-tr -d '\r' < "$ROOT/alire.toml" > "$WORK/sources/argon2/alire.toml"
+# The library's own pins go: the driver pins BLAKE2b to the copy beside it.
+tr -d '\r' < "$ROOT/alire.toml" \
+  | awk '/^\[/ { skip = ($0 == "[[pins]]") } !skip' \
+  > "$WORK/sources/argon2/alire.toml"
 tr -d '\r' < "$ROOT/argon2.gpr" > "$WORK/sources/argon2/argon2.gpr"
 copy_sources "$blake2b_dir/src" "$WORK/sources/blake2b/src"
 # A pinned crate's manifest may not carry the index's [origin] table.
@@ -330,7 +377,7 @@ for tree_name in $TREES; do
   cp -R "$WORK/sources/argon2" "$WORK/sources/blake2b" "$tree/"
   copy_sources "$DRIVER/src" "$tree/driver/src"
   tr -d '\r' < "$DRIVER/exception_stack.gpr" > "$tree/driver/exception_stack.gpr"
-  cat > "$tree/driver/alire.toml" <<'TOML'
+  cat > "$tree/driver/alire.toml" <<TOML
 name = "exception_stack"
 description = "Stack left by hardened subprograms on return and on an exception"
 version = "0.0.0"
@@ -339,7 +386,7 @@ executables = ["exception_stack", "abort_stack"]
 
 [[depends-on]]
 argon2 = "*"
-blake2b = "=0.1.1"
+blake2b = "=$blake2b_version"
 
 [[pins]]
 argon2 = { path = "../argon2" }
@@ -393,7 +440,8 @@ build () {
     }
 }
 
-# Summarises run $2 of results file $1 (every repeat): prints
+# Summarises run $2 of results file $1 (every repeat, those of a discarded
+# batch too: repeat=d<batch>-<n>, listed only if they hit): prints
 # "<least> <most> <totals per repeat>|<detail>", where the detail is, for
 # the repeat with the most hits, each class's hits at aligned and at other
 # offsets and the number of distinct words found, and where the first
@@ -404,35 +452,41 @@ summarise () {
       delete f
       for (i = 2; i <= NF; i++) { split($i, kv, "="); f[kv[1]] = kv[2] }
       if (f["run"] != run) next
-      r = f["repeat"] + 0
-      if (r > last) last = r
+      r = f["repeat"]
+      if (!(r in total)) keys[++count] = r
       n = f["aligned"] + f["unaligned"]
       total[r] += n
-      if (f["class"] == "M") mdistinct[r] += f["distinct"]
       text[r] = text[r] sprintf(" %s=%d/%d/%d", f["class"], f["aligned"],
                                 f["unaligned"], f["distinct"])
       if (n > 0) depths[r] = depths[r] sprintf(" %s@%s", f["class"], f["depths"])
     }
     END {
-      lo = -1; hi = -1; best = 1; list = ""
-      for (r = 1; r <= last; r++) {
+      lo = -1; hi = -1; best = keys[1]; list = ""; shown = 0
+      for (k = 1; k <= count; k++) {
+        r = keys[k]
         if (lo < 0 || total[r] < lo) lo = total[r]
         if (total[r] > hi) { hi = total[r]; best = r }
-        list = list (r > 1 ? "," : "") total[r] + 0
+        if (r ~ /^d/) {
+          if (total[r] > 0) list = list "," r "=" total[r]
+        } else {
+          list = list (shown++ > 0 ? "," : "") total[r] + 0
+        }
       }
-      printf "%d %d %s %d|%s%s\n", lo, hi, list, mdistinct[best] + 0, substr(text[best], 2),
+      printf "%d %d %s|%s%s\n", lo, hi, list, substr(text[best], 2),
              (depths[best] == "" ? "" : ";" depths[best])
     }' "$1"
 }
 
 # The most stack any repeat of run $2 in file $1 wrote (the touched=
 # field: bytes of the region from its top down to the deepest nonzero
-# byte).
+# byte). The repeats of a discarded batch (repeat=d...) are left out: they
+# wrote more than their region held, and the figure is of the final batch.
 touched () {
   awk -v run="$2" '
     $1 == "hits" {
       delete f
       for (i = 2; i <= NF; i++) { split($i, kv, "="); f[kv[1]] = kv[2] }
+      if (f["repeat"] ~ /^d/) next
       if (f["run"] == run && f["touched"] + 0 > m) m = f["touched"] + 0
     }
     END { print m + 0 }' "$1"
@@ -441,13 +495,15 @@ touched () {
 # Checks the bookkeeping of results file $1 (label $2), from a build of
 # kind $3 (raise: the injected raise; normal: none): the baseline finds
 # nothing, the raise run raised (and exists only in a raise build), the
-# normal run did not raise, and every call wrote some stack.
+# normal run did not raise, and every call wrote some stack. The repeats
+# of a discarded batch (repeat=d...) are evidence only, and not checked.
 check_runs () {
   local file=$1 label=$2 mode=$3
   awk -v label="$label" -v mode="$mode" '
     $1 == "hits" {
       delete f
       for (i = 2; i <= NF; i++) { split($i, kv, "="); f[kv[1]] = kv[2] }
+      if (f["repeat"] ~ /^d/) next
       seen[f["run"]] = 1
       if (f["run"] == "baseline" && f["aligned"] + f["unaligned"] > 0) {
         print label ": the baseline (no call) found canaries"; bad = 1 }
@@ -472,10 +528,13 @@ check_runs () {
 # output goes to file $2, each "hits" line tagged repeat=<n>. The region
 # must hold all the stack the program wrote, with 256 bytes to spare; if
 # it does not, every repeat is run again with the region doubled, up to
-# 256 KiB. Sets KIB_USED.
+# 256 KiB. The "hits" lines of a batch run again are not lost: they are
+# tagged repeat=d<batch>-<n> and appended after the last batch. Sets
+# KIB_USED.
 run_probe () {
-  local program=$1 out=$2 kib=$3 deepest repeat
+  local program=$1 out=$2 kib=$3 deepest repeat discarded=0
   shift 3
+  : > "$out.discarded"
   while :; do
     : > "$out"
     for repeat in $(seq 1 "$REPEATS"); do
@@ -498,8 +557,13 @@ run_probe () {
     fi
     say "  (${program##*/} wrote $deepest bytes of a $kib KiB region;" \
         "repeating with $((kib * 2)) KiB)"
+    discarded=$((discarded + 1))
+    sed -n "s/^hits repeat=\([0-9][0-9]*\) /hits repeat=d$discarded-\1 /p" \
+      "$out" >> "$out.discarded"
     kib=$((kib * 2))
   done
+  cat "$out.discarded" >> "$out"
+  rm -f "$out.discarded"
   KIB_USED=$kib
 }
 
@@ -527,20 +591,12 @@ case_name () {
 # Prints one build's counts for run $4 of file $3 (label $2), and records
 # the most hits of any repeat as result $1 (see most).
 show () {
-  local key=$1 label=$2 file=$3 run=$4 result hits per_repeat mdistinct
+  local key=$1 label=$2 file=$3 run=$4 result hits per_repeat
   result=$(summarise "$file" "$run")
-  read -r _ hits per_repeat mdistinct <<< "${result%%|*}"
+  read -r _ hits per_repeat <<< "${result%%|*}"
   echo "  $label: hits per repeat $per_repeat (most: ${result#*|});" \
        "stack written up to $(touched "$file" "$run") bytes"
   printf -v "MOST_${key//[^A-Za-z0-9]/_}" '%s' "$hits"
-  printf -v "MOSTD_${key//[^A-Za-z0-9]/_}" '%s' "$mdistinct"
-}
-
-# The distinct message words found in the worst repeat of result $1.
-most_distinct () {
-  local name="MOSTD_${1//[^A-Za-z0-9]/_}"
-  [ -n "${!name:-}" ] || harness_error "no distinct count recorded for $1"
-  echo "${!name}"
 }
 
 # The result recorded as $1 by show (bash 3 has no associative arrays).
@@ -554,7 +610,6 @@ most () {
 blind_normal=""   # normal-return controls that saw nothing (exit 1)
 failed=""         # gated normal-return results that failed (exit 3)
 unmeasured=""     # exception results whose control saw nothing (notice)
-residue=""        # B and C hardened normal-return hits, within the control
 exception_hits="" # hardened hits after an exception (reported only)
 
 summary () { echo "  summary: $1 $2 $3: control $4, hardened $5: $6"; }
@@ -562,19 +617,10 @@ summary () { echo "  summary: $1 $2 $3: control $4, hardened $5: $6"; }
 # Judges and prints the normal-return result of case $2 (B or C) in
 # profile $1, build kind $3, with control hits $4 and hardened hits $5.
 judge_hash_normal () {
-  local profile=$1 which=$2 kind=$3 c=$4 h=$5 cd=$6 hd=$7 verdict
-  # The comparison with the control uses the distinct message words (the
-  # figure, see the header): the raw count also counts a word found again at
-  # an unaligned offset, which differs between builds by placement alone.
-  if [ "$STRICT_NORMAL" = 1 ] && [ "$h" -gt 0 ]; then
+  local profile=$1 which=$2 kind=$3 c=$4 h=$5 verdict
+  if [ "$h" -gt 0 ]; then
     failed="$failed $profile/$which/normal-$kind"
-    verdict="FAIL (STRICT_NORMAL=1): the hardened build left canaries after a normal return"
-  elif [ "$hd" -gt "$cd" ]; then
-    failed="$failed $profile/$which/normal-$kind"
-    verdict="FAIL: the hardened build left more distinct message words than its control after a normal return"
-  elif [ "$h" -gt 0 ]; then
-    residue="$residue $profile/$which/normal-$kind=$h"
-    verdict="pass: known residue (BLAKE2b's compression frame, outside this crate's scrub; TRUST.md H-1, H-3), no more than the control's"
+    verdict="FAIL: the hardened build left canaries after a normal return"
   elif [ "$c" -gt 0 ]; then
     verdict="pass: none left (the control left some)"
   else
@@ -696,9 +742,7 @@ for profile in "$@"; do
         for kind in shipped injected; do
           c=$(most "$profile/$which/control/normal-$kind")
           h=$(most "$profile/$which/hardened/normal-$kind")
-          judge_hash_normal "$profile" "$which" "$kind" "$c" "$h" \
-            "$(most_distinct "$profile/$which/control/normal-$kind")" \
-            "$(most_distinct "$profile/$which/hardened/normal-$kind")"
+          judge_hash_normal "$profile" "$which" "$kind" "$c" "$h"
         done
         ;;
     esac
@@ -725,7 +769,10 @@ for profile in "$@"; do
           seen[key] = 1; trials[f["run"]]++
           if (f["aborted"] == "yes") aborted[f["run"]]++
         }
-        hits[key] += f["aligned"] + f["unaligned"]
+        # the most of any batch (a discarded batch has repeat=d...)
+        n = f["aligned"] + f["unaligned"]
+        batch[key, f["repeat"]] += n
+        if (batch[key, f["repeat"]] > hits[key]) hits[key] = batch[key, f["repeat"]]
         if (f["trial"] + 0 > last) last = f["trial"] + 0
       }
       END {
@@ -749,10 +796,6 @@ if [ -n "$unmeasured" ]; then
   say "NOTICE: exception results unmeasured on this platform (the control" \
       "left no canary after the exception) in:$unmeasured"
 fi
-if [ -n "$residue" ]; then
-  say "known residue after a normal return (BLAKE2b's compression frame," \
-      "no more than the control's) in:$residue"
-fi
 if [ -n "$blind_normal" ]; then
   say "BLIND: a normal-return control left no canary in:$blind_normal;" \
       "compression's normal-return results there are not a" \
@@ -763,10 +806,5 @@ if [ -n "$failed" ]; then
   say "FAILED: a hardened build left canaries after a normal return in:$failed"
   exit 3
 fi
-if [ "$STRICT_NORMAL" = 1 ]; then
-  say "passed: no hardened build left a canary after a normal return" \
-      "(STRICT_NORMAL=1)"
-else
-  say "passed: every normal-return gate held"
-fi
+say "passed: no hardened build left a canary after a normal return"
 exit 0

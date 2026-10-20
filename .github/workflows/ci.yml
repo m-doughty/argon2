@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: BLAKE2b is the index release 0.1.1, unpinned
+      - name: BLAKE2b is 0.1.2, pinned to one commit until it is in the index
         run: bash scripts/check-dependency.sh
       - name: Source gate self-test
         run: bash scripts/check-sources.sh --self-test
@@ -120,10 +120,10 @@ jobs:
       # sources and on copies with one injected line each, built in
       # obj/exception-stack/ (see the script's header). Exit 1 (a harness
       # error, or a normal-return control that saw no canary) and exit 3 (a
-      # hardened build left canaries after a normal return where the crate
-      # claims none, or more than its control) fail the job. Where an
-      # exception's control saw no canary, the script prints "exception
-      # results unmeasured"; that is a warning here, not a failure.
+      # hardened build left a canary after a normal return) fail the job.
+      # Where an exception's control saw no canary, the script prints
+      # "exception results unmeasured"; that is a warning here, not a
+      # failure.
       - name: Stack canary scan of the hardened code (normal return gated, exception reported)
         shell: bash
         run: |

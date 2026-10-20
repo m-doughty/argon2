@@ -87,9 +87,12 @@ for no helper left out of line, and for no call of `memcpy` or `memmove`
 frame, not the frames of helpers the body calls that are not inlined. H′ and
 H₀ likewise take their BLAKE2b state, and H′ its two chain values, as
 scratch parameters, so a future cleanup guard can reach them. BLAKE2b's own
-compression frame stays outside any such guard and outside this crate's
-control: message words left there after a normal return of H′ are
-measured (`TRUST.md` H-2), not removed.
+compression locals stay outside any such guard. From blake2b 0.1.2 its
+compression is inlined into its own scrubbed entry points (`Init`, `Update`
+and `Final`), so after a normal return its frame is inside blake2b's
+scrubbed body. `scripts/check-exception-stack.sh` fails on any canary a
+hardened build leaves after a normal return of H′ or compression
+(`TRUST.md` H-2).
 
 The guarantee is for normal completion with satisfied preconditions.
 This package does not guarantee cleanup after asynchronous interruption,

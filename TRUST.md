@@ -19,7 +19,7 @@ hardening attributes give and what they do not.
 |---|---|---|
 | Assumptions (`pragma Assume`, `False_Positive`, `Intentional`, `Skip_Proof`, an `Import` GNATprove trusts) | none in `src/` | would need one each |
 | Unproved code (`SPARK_Mode => Off`, C or Rust behind it) | none in `src/` | would need one each |
-| Third-party SPARK | blake2b 0.1.1, same maintainer, its own register (D-1) | listed |
+| Third-party SPARK | blake2b 0.1.2, same maintainer, its own register (D-1) | listed |
 | Trusted definitions | none | would need one each |
 | Warning suppressions | W-1, W-4, W-6, W-7 (`pragma Warnings`; W-2, W-3 and W-5 retired); see also N-4 | no, each has a recorded `Reason` |
 | Toolchain and proof model | T-1 to T-3 | a bump is a signed change |
@@ -53,9 +53,8 @@ a precondition check skip themselves there, each printing
 such lines), `scripts/check-h0-object.sh`, and
 `scripts/check-exception-stack.sh` (H-2), a gate on normal returns and a
 measurement of exceptions: exit 1 (a harness error, or a blind
-normal-return control: A′) and exit 3 (a hardened build left canaries
-after a normal return in compression, or more distinct message words than
-its control in H′ and BLAKE2b's frame) fail the job; exception results are
+normal-return control: A′) and exit 3 (a hardened build left a canary
+after a normal return, in any case) fail the job; exception results are
 reported only, and where an exception's control leaves no canary they are
 marked unmeasured and CI prints a warning. BLAKE2b is built in its own
 `release` profile (checks and contracts off) in every one of these builds.
@@ -76,14 +75,14 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 | T-2 | Toolchain | the provers and Why3 | unsigned |
 | T-3 | Proof model | GNAT runtime big-integer library | unsigned |
 | T-4 | Test-only trust | the C oracles and `Import`ed C in `tests/` | unsigned |
-| D-1 | Third-party SPARK | `blake2b` 0.1.1 from the Alire index | unsigned |
+| D-1 | Third-party SPARK | `blake2b` 0.1.2, pinned to one commit until it is in the Alire index | unsigned |
 | S-1 | Specification | `Argon2.H0_Model` is the RFC 9106 §3.2 message | unsigned |
 | S-2 | Specification | `Blake2b.Spec` is RFC 7693, and `Logical_Hash` is BLAKE2b beyond 2³¹ bytes | unsigned |
 | S-3 | Specification | `Argon2.H_Prime_Model` is RFC 9106 §3.3 | unsigned |
 | S-4 | Specification | `Argon2.Compression_Model` is RFC 9106 §§3.5, 3.6 | unsigned |
 | H-1 | Not proved | wipes, register and stack clearing | unsigned |
 | H-2 | Not proved | exceptional and asynchronous exits | unsigned |
-| H-3 | Not proved | the cleanup guard does not exist yet; BLAKE2b's own compression frame will stay outside it | unsigned |
+| H-3 | Not proved | the cleanup guard does not exist yet; BLAKE2b's own compression locals will stay outside it | unsigned |
 | W-1 | Warning suppression | `src/argon2-h0.ads` (`Compute`: `strub`, `zero_call_used_regs`, `flatten`), `Machine_Attribute` | no signature needed |
 | W-4 | Warning suppression | `src/argon2-h_prime.ads` (`Hash`: `strub`, `zero_call_used_regs`, `flatten`), `Machine_Attribute` | no signature needed |
 | W-6 | Warning suppression | `src/argon2-wipe.ads` (`Bytes`), `Machine_Attribute` | no signature needed |
@@ -257,7 +256,7 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   in a separate `tests/TRUST.md`, linked from this register with
   machine-checked coverage; neither exists yet (see Notes).
 
-### D-1 blake2b 0.1.1
+### D-1 blake2b 0.1.2
 - **Proposition:** the contracts and lemmas the proofs here use are true of
   blake2b's code: `Blake2b.Hashing` (`Init`, `Update` and `Final`),
   `Blake2b.Streaming` and `.Theory` (including `Logical_Equal` on
@@ -265,11 +264,17 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   `Blake2b.Spec` with `Blake2b.Spec.Incremental`.
 - **Why believed:** blake2b's own proof and register (its T-1, T-2, T-3, S-1,
   H-1, W-1 to W-8, N-1 and N-2), which this register does not repeat. On
-  14 October 2026, on macOS arm64, this crate's cold proof also analyzed those
-  units (the GNATprove run on this project covers the dependency's sources)
-  and proved them. `alire.toml` asks the Alire index for exactly blake2b
-  0.1.1 and carries no pin; `scripts/check-dependency.sh` checks that (no pin
-  of any kind, exactly that version); the CI `gates` job will run it.
+  19 October 2026, on macOS arm64, this crate's cold proof also analyzed those
+  units of 0.1.2 (the GNATprove run on this project covers the dependency's
+  sources) and proved them (3432 checks in all, none unproved; on 14 October
+  it did the same for 0.1.1). `alire.toml` asks for exactly blake2b 0.1.2.
+  That release is not in the Alire index yet, so the manifest pins it to
+  its release commit `fec91ab72758a7c5d1d06450f78615c793352440` (tag
+  `0.1.2`) of `https://github.com/m-doughty/blake2b`; the proof above ran
+  on the commit before it, whose sources are the same;
+  `scripts/check-dependency.sh` checks that (exactly that version, that pin
+  and no other); the CI `gates` job runs it. The pin goes when 0.1.2 is in
+  the index.
 - **If false:** every H₀ and H′ claim that names `Blake2b` is about a function
   that is not BLAKE2b.
 - **Scope:** H₀ and H′. Proof visibility (blake2b's N-2) matters to both,
@@ -390,13 +395,12 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   `Argon2.H_Prime.Hash` leave no copy of an input or intermediate digest
   that the library holds in a buffer of its own, in a call-used register
   (callee-saved registers are not zeroed; the ABI restores them), or on the
-  stack, **except what BLAKE2b's own compression leaves in its frame**
-  (H-3), which this crate cannot scrub. For `Hash` that residue is
-  measured (H-2): message words remained on the stack after a normal return
-  in the `release` profile on all three platforms measured, in `validation`
-  on macOS arm64 (1 word) and Linux x86_64 (earlier script); a debugger
-  placed them in the frame of `Blake2b.Core.Compress` on macOS arm64 only,
-  and elsewhere that location is inferred, not shown. `Compute` has not been measured: what its calls of
+  stack. From blake2b 0.1.2, BLAKE2b's compression is inlined into its own
+  scrubbed entry points (`Init`, `Update` and `Final`), so after a normal
+  return its frame is inside blake2b's scrubbed body. For `Hash` this is
+  measured and gated (H-2): the scan fails on any canary a hardened build
+  leaves after a normal return, and on macOS arm64 (19 October 2026, both
+  profiles) it found none. `Compute` has not been measured: what its calls of
   BLAKE2b leave is not known. The caller's own arrays are not erased by
   these calls. For
   `Argon2.Compression.Compress` and `Compress_Xor` it is narrower: on normal
@@ -527,7 +531,7 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   leaves on the stack has been measured, below; nothing is claimed beyond
   that measurement. The same scan gates what a normal return leaves (below).
 - **What is scanned, and on what code:** `scripts/check-exception-stack.sh`
-  (see its header), on copies of the sources and of the BLAKE2b release
+  (see its header), on copies of the sources and of the BLAKE2b version
   Alire deployed, built in both profiles (BLAKE2b in its `release` profile,
   as the tests build it), never `src/` itself. Three kinds of build: the
   shipped sources (normal returns); copies with ONE statement inserted per
@@ -559,15 +563,12 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 - **What is gated, and what is reported:** exit 1 (a harness error, or a
   blind normal-return control: A′'s control must leave its spilled words,
   32 of 32 on macOS arm64, and the hardened build none, `strub` scrubbing
-  them) and exit 3 (a hardened build left canaries after a normal return in
-  compression, A or A′, or more distinct message words than its control in
-  H′ and BLAKE2b's frame, B and C, comparing builds of the same kind) fail
-  the script and CI's job. For B and C, where control and hardened build
-  both leave none, the result passes as "not discriminating". Exception
-  results are reported only; where an exception's control leaves no canary
-  they are marked unmeasured and CI prints a warning. `STRICT_NORMAL=1`
-  fails on any hardened hit after a normal return, the BLAKE2b residue
-  included; CI does not set it.
+  them) and exit 3 (a hardened build left a canary after a normal return,
+  in any case: A, A′, B or C) fail the script and CI's job. For B and C,
+  where control and hardened build both leave none, the result passes as
+  "not discriminating". Exception results are reported only; where an
+  exception's control leaves no canary they are marked unmeasured and CI
+  prints a warning.
 - **What GCC emits for an exceptional exit** (the injected copies' objects,
   macOS arm64): once the body can raise, the `strub` wrapper gets a cleanup
   that zeroes the body's frame (from the watermark to the wrapper's stack
@@ -575,10 +576,25 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   (`_Unwind_Resume`). The frames below the body's, those of the run-time's
   raise routines and of the unwinder, are not zeroed, and the registers are
   not cleared on that path (`zero_call_used_regs` acts at returns).
-- **Results, macOS arm64** (17 October 2026, GCC 16.1.0, natively; two
-  runs of the present script, five processes each, 24 KiB region; control /
-  hardened, hits (distinct words); a range is the spread over the
-  processes):
+- **Results, macOS arm64, blake2b 0.1.2** (19 October 2026, GCC 16.1.0,
+  natively; one run of the present script, five processes per build, 24 KiB
+  region; control / hardened, hits (distinct words); a range is the spread
+  over the processes):
+
+  | Case | Profile | Exception | Normal, injected build | Normal, shipped sources |
+  |---|---|---|---|---|
+  | A | release | 14 (8) / 10–12 (8) | 0 / 0 | 0 / 0 |
+  | A | validation | 6 (4) / 6 (4) | 0 / 0 | 0 / 0 |
+  | A′ (spill) | both | no raise | 32 (32) / 0 | not applicable |
+  | B | release | 1 (1) / 0 | 2 (2) / 0 | 2 (2) / 0 |
+  | B | validation | 0–1 (1) / 0 | 2 (2) / 0 | 2 (2) / 0 |
+  | C | release | 5 (5) / 0 | 0 / 0 | 2 (2) / 0 |
+  | C | validation | 5 (5) / 0 | 0 / 0 | 2 (2) / 0 |
+
+  **Results, macOS arm64, blake2b 0.1.1** (17 October 2026, two runs of an
+  earlier version of the script; on 19 October the present script, on a
+  copy of the crate set back to 0.1.1, gave the same figures for B and C and
+  failed, exit 3, on every normal return of B and C):
 
   | Case | Profile | Exception | Normal, injected build | Normal, shipped sources |
   |---|---|---|---|---|
@@ -611,9 +627,12 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   exception: in A, words of the xor (each the low half of a vector register
   at the raise, consistent with the unwinder saving the floating-point
   registers) and permuted words (held in callee-saved registers), in the
-  run-time's and the unwinder's frames below the scrubbed one; in B and C, message words in
-  the frame of `Blake2b.Core.Compress`, which is not hardened itself (its
-  callers' `strub` scrubs only their own frames). On Linux aarch64 the
+  run-time's and the unwinder's frames below the scrubbed one; in B and C,
+  with blake2b 0.1.1, message words in the frame of `Blake2b.Core.Compress`,
+  which was not hardened itself (its callers' `strub` scrubbed only their
+  own frames). With blake2b 0.1.2, which inlines that compression into its
+  scrubbed entry points, the hardened builds left none after the raise in B
+  and C (the controls 1 and 5); reported only, not a claim. On Linux aarch64 the
   hardened builds left none after the raise in any case; the measurement
   does not tell whether the scrub or the propagation's own frames (resumed
   from the wrapper's frame, so written over the stack below it) removed
@@ -633,20 +652,20 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   that `strub` removes them in the hardened one. That is not complete
   erasure: the probe recognises selected complete 64-bit words only. The
   earlier script also found none on Linux aarch64, and on Linux x86_64 in
-  `validation`, but had no A′, so there that is not a measurement. After a normal return of the hardened `Hash`, message
-  words remained on the stack: on macOS arm64, 1 in each profile, in the
-  shipped and the injected build, as many as the control's (the final
-  script; before `Rehash` and `Initial_Hash` were inlined into `Hash` it
-  was 2 in `release` and none in `validation`); and, with the earlier
-  script, in `release` 4 on Linux aarch64 and 11 on Linux x86_64, in
-  `validation` none on Linux aarch64 and 6 on Linux x86_64. A debugger
-  placed them in the frame of
-  `Blake2b.Core.Compress` on macOS arm64 (in the build before that
-  inlining; the word's depth, about 8.9 KiB below the helper frame, is the
-  same in the final one); elsewhere that is inferred. That
-  is BLAKE2b's compression frame, which H-3 lists as outside any guard;
-  H-1's proposition for `Hash` does not hold for it, and the gate only
-  bounds it by the control's count.
+  `validation`, but had no A′, so there that is not a measurement. After a
+  normal return of the hardened `Hash`, with blake2b 0.1.2, no selected
+  canary word was detected (macOS arm64, 19 October 2026, both profiles,
+  shipped and injected builds), where the controls left 2 message words in
+  every build but C's injected one (0, not discriminating). From 0.1.2
+  BLAKE2b's compression runs inside its own scrubbed entry points, and the
+  scan fails on any hardened hit after a normal return in B and C as in A.
+  With blake2b 0.1.1 one message word remained there in each profile (a
+  debugger placed it in the frame of `Blake2b.Core.Compress`, which ran
+  outside the scrubbed bodies), and the earlier script found more on Linux
+  (in `release` 4 on aarch64 and 11 on x86_64, in `validation` none on
+  aarch64 and 6 on x86_64); the present script would fail on such hits.
+  Whether 0.1.2 leaves none on Linux and Windows is not known until CI
+  runs the scan there.
 - **Task abort: not measured.** In each of the three platforms and both
   profiles, an asynchronous select around a loop of `Compress` (the shipped
   sources, no injected line) was never interrupted before the loop ended by
@@ -685,12 +704,11 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   does not wipe `Work`, the caller does.
 - **What stays outside any guard:** the working vector and message words that
   `Blake2b.Core.Compress` keeps in its own locals (`M`, `V`). Only `blake2b`
-  itself could change that, and nothing in this crate covers it: H-2
-  measured message words left on the stack after a normal return of `Hash`
-  in `release` (on macOS arm64 a debugger placed them in that frame), so
-  whatever `blake2b`'s own attributes and hardening check (its H-1) cover,
-  they do not remove these words in this crate's builds. The residue is
-  measured, not covered, and outside this crate's control.
+  itself could change that. From blake2b 0.1.2 that compression is inlined
+  into blake2b's scrubbed entry points (`Init`, `Update` and `Final`), so
+  after a normal return those locals are in a scrubbed body's frame, and the
+  scan (H-2) fails on any canary a hardened build leaves after a normal
+  return of `Hash`.
 - **What is requested, not proved:** stack scrubbing and register clearing
   by compiler attributes (`strub`, `zero_call_used_regs`), which are not
   proved. For H₀, H′ and compression they are checked in the object code

@@ -7,8 +7,9 @@ function G (§§3.5, 3.6). This is an early milestone; it does not yet
 implement password hashing, memory filling or lane indexing, and the Argon2d,
 Argon2i and Argon2id variants are not yet offered.
 
-The BLAKE2b dependency is blake2b 0.1.1 from the Alire index, exactly that
-version and unpinned. Builds need no neighbouring checkout.
+The BLAKE2b dependency is blake2b 0.1.2, exactly that version. Until 0.1.2
+is in the Alire index, `alire.toml` pins it to one commit of its
+repository, which Alire fetches. Builds need no neighbouring checkout.
 
 ## API
 
@@ -174,7 +175,7 @@ Several more commands are not part of the default run:
   building `tests/` once) scans the stack below the hardened subprograms for
   known 64-bit canaries: a gate on what a normal return leaves, and a
   measurement of what an exception leaves. It builds copies of the sources
-  (and of the BLAKE2b release Alire deployed) in `obj/exception-stack/`, in
+  (and of the BLAKE2b version Alire deployed) in `obj/exception-stack/`, in
   the `release` and `validation` profiles, never `src/` itself, of three
   kinds: the shipped sources (normal returns); copies with one injected
   `raise` per case (exceptions, and the normal return of the same build),
@@ -186,12 +187,10 @@ Several more commands are not part of the default run:
   stack. Each build has a control, the same copy with `strub` and
   `zero_call_used_regs` removed. Exit 1 (a harness error, or a blind
   normal-return control: A′'s control left none of its spilled words) and
-  exit 3 (a hardened build left canaries after a normal return in
-  compression, or more distinct message words than its control in `H′` and
-  BLAKE2b's frame) fail it. Exception results are reported only; where an
+  exit 3 (a hardened build left a canary after a normal return, in any
+  case) fail it. Exception results are reported only; where an
   exception's control leaves no canary they are marked unmeasured (CI
-  prints a warning). `STRICT_NORMAL=1` fails on any hardened hit after a
-  normal return, the BLAKE2b residue included. It also tries a task abort
+  prints a warning). It also tries a task abort
   (an asynchronous select around `Compress`), reported only. The numbers
   and their limits are in [TRUST.md](TRUST.md) H-2.
 - `python3 -I scripts/h0-vectors.py --check` checks that
@@ -236,7 +235,7 @@ cheapest prover (2,807 in the run of 15 October, on the earlier tree); no
   arguments, for every legal input length, empty inputs and the
   2³⁴ + 36-byte maximum included. The proof follows the real `Init`, every
   real `Update` (ten 4-byte fields, each input in 4,096-byte chunks) and the
-  real `Final`, with the per-call lemmas of blake2b 0.1.1.
+  real `Final`, with the per-call lemmas of blake2b 0.1.2.
 - **Two views of the message agree.** `H0_Model` lays the message out as
   fourteen sources (the ten fields and P, S, K, X) cut into fourteen pieces
   in RFC 9106's order. `Lemma_All_Positions` proves that at every position,
@@ -298,7 +297,7 @@ specification against RFC 7693.
   code and the model are wrong the same way, which the proof cannot catch
   and the tests do.
 
-**Trusted.** The proofs rest on blake2b 0.1.1: its streaming theory, its
+**Trusted.** The proofs rest on blake2b 0.1.2: its streaming theory, its
 `TRUST.md` (including note N-2: the whole-stream lemmas read
 `Blake2b.Hashing.Max_Input`'s private completion through proof
 visibility), and its specification, which its own tests validate against
@@ -338,7 +337,7 @@ margin gate; no `pragma Assume`, no `Import`, no `SPARK_Mode => Off`):
   of LE32 (T) ‖ A, Vᵢ the 64-byte BLAKE2b of Vᵢ₋₁, the first 32 bytes of
   V₁ … Vᵣ and then V(r+1), the BLAKE2b with a digest length of T − 32r of Vᵣ
   (not a truncation). The proof follows the real `Init`, `Update` and `Final`
-  of blake2b 0.1.1 and relates the k-th value of the loop to the model's
+  of blake2b 0.1.2 and relates the k-th value of the loop to the model's
   V(k + 1); it never unfolds the chain (up to 2²⁷ links).
 - **The input bound.** An input over 1,024 bytes breaks the precondition: a
   SPARK caller is proved never to pass one; for any other caller only
@@ -371,7 +370,7 @@ the RFC's is **tested**.
   test reaches them.
 
 **Trusted.** `H_Prime_Model` as the RFC's function ([TRUST.md](TRUST.md) S-3),
-blake2b 0.1.1 and its specification (D-1, S-2), the toolchain, and the test-only
+blake2b 0.1.2 and its specification (D-1, S-2), the toolchain, and the test-only
 C code and CPython (T-4).
 
 **Scope limits.** H′ only. Buffers are wiped and the stack-scrubbing and
@@ -379,13 +378,13 @@ register-clearing attributes are requested on `Hash`, with the same limits as
 for H0 (see "Zeroization boundary" in [docs/proof-scope.md](docs/proof-scope.md));
 the object check does not inspect the wipes. `S`, `V` and `Next_V` are supplied
 by the caller so that a future cleanup guard can reach them; no guard exists yet.
-After a normal return, words of the input can remain on the stack, which the
-scrubbing does not cover (on macOS arm64 a debugger placed them in the frame
-of BLAKE2b's own compression function; elsewhere that is inferred); after
-an exception, what remains depends on the platform. Both are measured, on
-the shipped sources and on copies with an injected `raise`, by
-`scripts/check-exception-stack.sh`, not prevented (see [TRUST.md](TRUST.md)
-H-2).
+From blake2b 0.1.2, BLAKE2b's compression is inlined into its own scrubbed
+entry points, so after a normal return its frame is inside blake2b's
+scrubbed body. `scripts/check-exception-stack.sh` fails on any canary a
+hardened build leaves after a normal return (macOS arm64, 19 October 2026:
+none, in both profiles). After an exception, what remains depends on the
+platform; the script measures it, on copies with an injected `raise`, and
+nothing prevents it (see [TRUST.md](TRUST.md) H-2).
 
 ## Block compression: what is proven, tested and trusted
 
