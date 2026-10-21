@@ -149,15 +149,19 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 - **Why believed:** widely used. The crate's proof (`argon2.gpr`, and CI)
   races all three and is limited in steps, not time (`--timeout=0`). On top of
   that, a local script, `scripts/h0-mutants.sh` (the name is old; it covers
-  the six units of H₀, H′ and compression, models included), shows at its baseline that every check of the H₀,
-  H′ and compression units and their models is proved by at least two
+  the six units of H₀, H′ and compression, models included, and the indexing
+  model with the geometry), shows at its baseline that every check of those
+  units is proved by at least two
   provers each on its own, and that, for each of its conditions, the cheapest
   proof found among the single-prover runs costs no more than half the step
   budget (different conditions of one check may use different provers). Run on
   macOS arm64 on 17 October 2026: no check is proved by fewer than two
   provers; the costliest check is H′'s at 3,613 steps against the limit of
   5,000 (the budget is 10,000), H₀'s costliest is at 2,763 and compression's
-  at 1,637. It also shows that twenty-six mutated
+  at 1,637. On 20 October 2026 (macOS arm64) the baseline passed again with
+  `Argon2.Geometry` and `Argon2.Indexing_Model` added: their costliest
+  checks need 1 and 2 steps, and no check of theirs is proved by fewer than
+  two provers. It also shows that twenty-six mutated
   programs behave as designed: twelve of H₀, and fourteen of compression
   (ten whose code is wrong and which the proof and the tests both catch, and
   four where code and model are wrong in the same way, which still prove, the
@@ -169,8 +173,9 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   also carry a wall-clock timeout (default 300 s) besides the steps, unlike
   the crate's own proof, which has none; and its logs are kept outside the repository (they are gitignored),
   so the repository itself retains no record of the result. Both gates
-  cover the six units the script lists (`UNITS`): `Argon2.H0`,
-  `Argon2.H_Prime` and `Argon2.Compression`, and their three models.
+  cover the eight units the script lists (`UNITS`): `Argon2.H0`,
+  `Argon2.H_Prime` and `Argon2.Compression`, their three models,
+  `Argon2.Geometry` and `Argon2.Indexing_Model`.
   `Argon2.Wipe` (the wipe procedure's body), `Argon2` and `Argon2.Blocks`
   are proved in the whole-crate run but held to neither gate; the checks at
   the wipe's calls from H₀ and H′ belong to those units, and those are
@@ -185,7 +190,9 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 ### T-3 The big-integer proof model
 - **Proposition:** GNATprove's model of `Ada.Numerics.Big_Numbers.Big_Integers`
   agrees with mathematical integers. The H₀ statement counts absorbed bytes
-  (up to 2³⁴ + 36) with blake2b's ghost big-integer counter.
+  (up to 2³⁴ + 36) with blake2b's ghost big-integer counter. The indexing model (S-5) also
+  multiplies and divides big integers: J₁², area·x and the divisions by
+  2³², through blake2b's ghost conversions.
 - **Why believed:** it is the standard library's own SPARK model. The H₀
   mutation suite includes a mutant (`len-p-omitted`) that fails the
   precondition of the call to `Absorb_Input`, whose conjuncts include the
@@ -201,7 +208,7 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 
 ### T-4 Test-only trust
 - **Proposition:** the C code in `tests/` is a valid reference. It decides
-  whether the specification claims (S-1, S-3, S-4) are believed, not whether the
+  whether the specification claims (S-1, S-3, S-4, S-5) are believed, not whether the
   proofs hold; production proof takes no result or contract from it.
 - **What there is:**
   - five `Import`ed C functions in the tests (`compress_oracle` in
@@ -251,6 +258,9 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
     nineteen expected digests in `tests/src/h0_vectors.ads` (the CI `gates`
     job checks they are current), and the three RFC 9106 §5 digests, typed
     in by hand in `tests/src/h0_tests.adb`;
+  - for indexing (S-5), no test in this repository yet: the replay that S-5
+    rests on ran outside it, against the vendored `core.c` and `ref.c`
+    (compiled with `-DARGON2_NO_THREADS`), and against the reference's published memory dumps;
 - **If false:** a wrong expectation could hide a defect, or hide that the
   model is not the RFC's.
 - **Scope:** all tests. This crate's own rules ask for signed test-only entries

@@ -10,7 +10,7 @@
 # tests under the same settings, or the run stops: otherwise a broken
 # toolchain or a missing prover would look like a caught mutant. The
 # baseline proves every proved unit (UNITS: H0, compression and H', each
-# model and client) from cold, once with every prover and once with each
+# model and client, and the indexing model with the geometry) from cold, once with every prover and once with each
 # prover alone, and every check must cost at most STEP_MARGIN steps (5000,
 # half the units' 10000-step budget in argon2.gpr; not configurable) with
 # its cheapest prover (scripts/spark-proof.py margin), so a check a mutant
@@ -151,6 +151,7 @@ PROVERS="z3 cvc5 altergo"
 UNITS="argon2-h0_model.adb argon2-h0.adb"
 UNITS="$UNITS argon2-compression_model.ads argon2-compression.adb"
 UNITS="$UNITS argon2-h_prime_model.ads argon2-h_prime.adb"
+UNITS="$UNITS argon2-geometry.adb argon2-indexing_model.adb"
 
 # name | file | exact text | replacement | unit to prove | must catch |
 #   expected unproved checks (FILE:LINE:RULE, comma-separated, as the

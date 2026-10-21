@@ -58,8 +58,8 @@ with Argon2.Geometry; use Argon2.Geometry;
 --  The conversions to mathematical integers are blake2b's (the ghost
 --  package Blake2b.Hashing.Big, as Argon2.H0 uses), so this crate holds no
 --  instance of the run-time library's conversion generics, whose bodies
---  GNATprove does not analyse. Big_LLI is the only place that names
---  them.
+--  GNATprove does not analyse. Big_LLI and the body of
+--  Relative_Position are the only places that name blake2b's conversions.
 
 package Argon2.Indexing_Model
   with SPARK_Mode

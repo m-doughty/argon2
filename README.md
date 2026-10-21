@@ -208,7 +208,8 @@ Several more commands are not part of the default run:
   same file (run it without `--check` to regenerate).
 - `bash scripts/h0-mutants.sh` runs the mutation suite for the H0, H′ and
   compression units, after a baseline that checks the step margin and that
-  two provers each prove every check alone (see its header; `--selftest`
+  two provers each prove every check alone (for those units, and for the
+  geometry and the indexing model) (see its header; `--selftest`
   checks its test classifier alone). It takes tens of minutes and is not run
   by CI.
 
@@ -474,13 +475,15 @@ reference yet, and nothing public uses either unit.
 **Proven** (GNATprove 16.1.0, from cold, step limits only; whole crate, macOS
 arm64, 20 October 2026: 3671 checks, none unproved, none justified, no unit
 skipped; both units are held to 10,000 steps per check, every check is
-proved by two provers each on its own, and the margin gate passes; no
+proved by two provers each on its own, and the margin gate passes (T-2); no
 `pragma Assume`, no `Import`, no `SPARK_Mode => Off`):
 
 - **`Shape_Of`.** The shape of p lanes and m KiB has m′ = 4p·⌊m / 4p⌋
   blocks, a segment of at least 2 blocks, and at most 2³² − 1 blocks.
 - **The reference is a block of the memory.** For every computed position
-  (not the first two blocks of a lane) and every 64-bit W: the area is not
+  (every position but the first two blocks of each lane in pass 0, which
+  come from H₀; in later passes those two are computed too, and the first
+  one's previous block is the lane's last) and every 64-bit W: the area is not
   empty, the reference lane is one of the p lanes (the block's own in pass 0,
   slice 0), and the reference index is in the lane. The products J₁² and
   area·x are taken in mathematical integers.
@@ -494,7 +497,12 @@ proved by two provers each on its own, and the margin gate passes; no
   exact choice: an area wrong by a block that stays inside the window would
   still prove.
 
-The model is static ghost code: proved, never compiled, never run.
+`Indexing_Model` and `Geometry`'s `M_Prime` (with the half of `Shape_Of`'s
+postcondition that names it) are static ghost code: proved, never compiled,
+never run. `Indexing_Model`'s object file holds only the package's
+elaboration flag. The rest of `Geometry` (`Shape_Of`, `Computed`,
+`Data_Independent` and the shape's sizes) is ordinary code, compiled into the
+library; nothing calls it yet.
 
 **Tested.** Nothing in the crate's tests yet: no code exists to test. That the
 model is RFC 9106's indexing was checked outside this repository, by
@@ -505,6 +513,7 @@ against the reference's own functions.
 
 **Trusted.** `Indexing_Model` and `Geometry` as RFC 9106's reference
 selection and address blocks ([TRUST.md](TRUST.md) S-5), the big-integer
-proof model (T-3), and the toolchain.
+proof model (T-3), the toolchain and the provers (T-1, T-2), and the
+official reference's C code that the replay ran against (T-4).
 
 Licensed under [BSD-3-Clause](LICENSE).
