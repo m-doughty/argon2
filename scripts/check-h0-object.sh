@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Object-code check for H0, H' and block compression: the compiled code
-# must hold no trace of the proof, and must carry its hardening. Run it after a build, through `alr exec` (see Usage); it reads
+# Object-code check for H0, H', block compression and indexing: the
+# compiled code must hold no trace of the proof, and must carry its
+# hardening. Run it after a build, through `alr exec` (see Usage); it reads
 # the objects of each profile named on the command line (default: release
 # and validation, the two the README's commands build).
 #
@@ -84,11 +85,44 @@
 # toolchain's gcc and an objdump for the target; the rest reads symbol
 # names (nm).
 #
-# For obj/<profile>/argon2-h0_model.o and argon2-h_prime_model.o (static
-# ghost code only), the only external symbol must be the package's
-# elaboration flag, and nothing may be referenced. For
+# For obj/<profile>/argon2-h0_model.o, argon2-h_prime_model.o and
+# argon2-indexing_model.o (static ghost code only), the only external
+# symbol must be the package's elaboration flag, no function may be
+# defined, local or global, and nothing may be referenced. For
 # argon2-compression_model.o, the elaboration flag and the initialisation
-# procedure of its type Positions (see below), and nothing referenced.
+# procedure of its type Positions (see below), no other function, and
+# nothing referenced. (No symbol but these means no big-integer or ghost
+# symbol either.)
+#
+# For obj/<profile>/argon2-indexing.o (Locate and Next_Address_Block are
+# Inline_Always, and the rest of the body is static ghost code or
+# Inline_Always helpers, so that the code runs in its caller's scrubbed
+# frame):
+#   * in the release profile, the object defines no function (a text
+#     symbol, global or local, other than a section symbol or a Mach-O
+#     assembler temporary): any one fails the check by name. In the
+#     validation profile the functions it defines are listed (measured),
+#     not checked. Whether the caller's scrubbed frame holds the inlined
+#     code is the caller's check, not this one;
+#   * in every profile, it fails on any symbol, defined or referenced,
+#     that names the proof residue listed for compression, the indexing
+#     model (Argon2.Indexing_Model), BLAKE2b's ghost big-integer
+#     conversions (Blake2b.Hashing.Big), or one of the unit's own ghost
+#     subprograms (its lemmas and Same_Block); the references it makes to
+#     other units are listed;
+#   * it checks that the object defines the package's elaboration flag, so
+#     that an empty or unreadable object cannot pass.
+#
+# Before reading the crate's objects, the script checks its own symbol
+# reading against control objects compiled by the same gcc for the same
+# target (so in each object format CI meets: Mach-O, ELF, COFF): one that
+# holds only an elaboration flag must pass the indexing check and the
+# elaboration-flag-only check; one with a planted global function, one with
+# a planted local function and one that references a big-integer symbol
+# must each fail the indexing check (naming the planted symbol); and one
+# with a planted function besides the flag must fail the
+# elaboration-flag-only check. A control that does not behave so stops the
+# run (exit 2): the checks would be blind.
 #
 # Usage: alr -C tests -n exec -- bash ../scripts/check-h0-object.sh [profile ...]
 #        NM=/path/to/nm OBJDUMP=/path/to/objdump PROBE_CC=/path/to/gcc \
@@ -111,6 +145,9 @@ FORBIDDEN="$FORBIDDEN|big_numbers|big_integer|h0_model|blake2b__streaming"
 FORBIDDEN="$FORBIDDEN|blake2b__spec|blake2b__hashing__model"
 FORBIDDEN="$FORBIDDEN|blake2b__hashing__absorbed|blake2b__hashing__max_input"
 COMPRESSION_FORBIDDEN="$FORBIDDEN|compression_model|h_prime_model"
+INDEXING_FORBIDDEN="$COMPRESSION_FORBIDDEN|indexing_model|blake2b__hashing__big"
+INDEXING_FORBIDDEN="$INDEXING_FORBIDDEN|argon2__indexing__lemma_"
+INDEXING_FORBIDDEN="$INDEXING_FORBIDDEN|argon2__indexing__same_block"
 
 # Disassembly. LLVM hides Mach-O function symbols behind section-start
 # aliases unless all symbols are requested. GNU AArch64 objdump also
@@ -401,6 +438,142 @@ check_scrubbed () {
   fi
 }
 
+# The functions that nm's output $1 defines, each after a space: text
+# symbols, global (T) or local (t), less the section symbols of COFF
+# (.text, .text$name) and Mach-O's assembler temporaries (ltmp<n>), which
+# label a section, not a function. Names as nm prints them.
+defined_functions () {
+  printf '%s\n' "$1" | awk '
+    NF >= 3 && $(NF - 1) ~ /^[Tt]$/ {
+      s = $NF
+      if (s ~ /^\./ || s ~ /^ltmp[0-9]+$/) next
+      printf " %s", s
+    }'
+}
+
+# The indexing checks (see the header) of object $2, read as profile $1:
+# the function check is gated only in the release profile. Prints what it
+# finds; returns 1 on a failure, 2 if the object does not define
+# Argon2.Indexing's elaboration flag (an unreadable object).
+check_indexing () {
+  local profile=$1 object=$2 obj_name symbols functions external found
+  local failed=0
+  obj_name=${object##*/}
+  symbols=$("$NM" "$object")
+  if ! printf '%s\n' "$symbols" \
+       | awk 'NF >= 3 && $(NF - 1) != "U" && tolower($NF) ~ /^_?argon2__indexing_e$/ { ok = 1 } END { exit !ok }'; then
+    echo "check-h0-object: $profile: $obj_name does not define" \
+         "Argon2.Indexing's elaboration flag (unreadable object?)"
+    return 2
+  fi
+  functions=$(defined_functions "$symbols")
+  if [ "$profile" = release ]; then
+    if [ -n "$functions" ]; then
+      echo "check-h0-object: $profile: $obj_name DEFINES a function" \
+           "(code outside its caller's frame):$functions"
+      failed=1
+    else
+      echo "check-h0-object: $profile: $obj_name defines no function"
+    fi
+  else
+    echo "check-h0-object: $profile: $obj_name defines (measured, not" \
+         "checked):${functions:- no function}"
+  fi
+  external=$(printf '%s\n' "$symbols" \
+    | awk '$(NF - 1) == "U" { printf " %s", $NF }')
+  echo "check-h0-object: $profile: $obj_name: references to other units" \
+       "(listed, not checked):${external:- none}"
+  found=$(printf '%s\n' "$symbols" | grep -iE "$INDEXING_FORBIDDEN" || true)
+  if [ -n "$found" ]; then
+    echo "check-h0-object: $profile: $obj_name names proof or" \
+         "runtime-cleanup symbols:"
+    printf '%s\n' "$found" | sed 's/^/  /'
+    failed=1
+  else
+    echo "check-h0-object: $profile: $obj_name clean"
+  fi
+  return "$failed"
+}
+
+# Whether object $2, read as profile $1, holds only what static ghost code
+# leaves (see the header): exactly $4 external symbols, all of them
+# matching the extended regular expression $3 (on the lower-cased name),
+# no function but those, and no reference; $5 says what that is. Prints
+# the verdict; returns 1 if the object holds more.
+check_flag_only () {
+  local profile=$1 object=$2 allowed=$3 expected=$4 what=$5
+  local obj_name external defined referenced fn extra=""
+  obj_name=${object##*/}
+  external=$("$NM" -g "$object" | awk 'NF > 0')
+  defined=$(printf '%s\n' "$external" | awk '$(NF - 1) != "U" && NF >= 2')
+  referenced=$(printf '%s\n' "$external" | awk '$(NF - 1) == "U"')
+  # A local function is not external: read every symbol for those.
+  for fn in $(defined_functions "$("$NM" "$object")"); do
+    if ! awk '{ print tolower($0) }' <<< "$fn" | grep -qE "$allowed"; then
+      extra="$extra $fn"
+    fi
+  done
+  if [ -n "$referenced" ] || [ -n "$extra" ] \
+     || [ "$(printf '%s\n' "$defined" | grep -c .)" -ne "$expected" ] \
+     || [ "$(printf '%s\n' "$defined" \
+             | awk '{ print tolower($NF) }' \
+             | grep -cE "$allowed")" -ne "$expected" ]; then
+    echo "check-h0-object: $profile: $obj_name holds more than $what:"
+    printf '%s\n' "$external" | sed 's/^/  /'
+    [ -z "$extra" ] || echo "  functions:$extra"
+    return 1
+  fi
+  echo "check-h0-object: $profile: $obj_name holds only $what"
+}
+
+# The controls (see the header): objects compiled from C by the probe's
+# gcc, each checked as a release object, must pass or fail as listed.
+control_dir="$ROOT/obj/object-check-controls"
+rm -rf "$control_dir"
+mkdir -p "$control_dir"
+flag='char argon2__indexing_E = 1;'
+model_flag='char argon2__indexing_model_E = 1;'
+planted='int argon2__indexing__planted (int x) { return 3 * x + 1; }'
+# name | check (indexing or flag) | outcome (pass or fail) | the symbol a
+#   failure must name | the C source (\n stands for a line break)
+controls=(
+  "flag-only|indexing|pass||$flag"
+  "global-function|indexing|fail|argon2__indexing__planted|$flag\n$planted"
+  "local-function|indexing|fail|argon2__indexing__planted_local|$flag\n__attribute__ ((used, noinline)) static int argon2__indexing__planted_local (int x) { return 3 * x + 1; }"
+  "big-integer|indexing|fail|ada__numerics__big_numbers__big_integers__planted|$flag\nextern char ada__numerics__big_numbers__big_integers__planted;\nchar *argon2__indexing__planted_ref = &ada__numerics__big_numbers__big_integers__planted;"
+  "model-flag-only|flag|pass||$model_flag"
+  "model-global-function|flag|fail|argon2__indexing_model__planted|$model_flag\nint argon2__indexing_model__planted (int x) { return 3 * x + 1; }"
+  "model-local-function|flag|fail|argon2__indexing_model__planted_local|$model_flag\n__attribute__ ((used, noinline)) static int argon2__indexing_model__planted_local (int x) { return 3 * x + 1; }"
+)
+for c_entry in "${controls[@]}"; do
+  IFS='|' read -r c_name c_check c_want c_symbol c_source <<< "$c_entry"
+  printf '%b\n' "$c_source" > "$control_dir/$c_name.c"
+  "$PROBE_CC" -O2 -c "$control_dir/$c_name.c" -o "$control_dir/$c_name.o"
+  c_rc=0
+  case $c_check in
+    indexing)
+      c_out=$(check_indexing release "$control_dir/$c_name.o") || c_rc=$? ;;
+    *)
+      c_out=$(check_flag_only release "$control_dir/$c_name.o" \
+              '^_?argon2__indexing_model_e$' 1 "its elaboration flag") \
+        || c_rc=$? ;;
+  esac
+  printf '%s\n' "$c_out" > "$control_dir/$c_name.log"
+  if [ "$c_want" = pass ] && [ "$c_rc" -eq 0 ]; then
+    echo "check-h0-object: control $c_name: the $c_check check passes, as it must"
+  elif [ "$c_want" = fail ] && [ "$c_rc" -eq 1 ] \
+       && grep -q -- "$c_symbol" <<< "$c_out"; then
+    echo "check-h0-object: control $c_name: the $c_check check fails, as it" \
+         "must, naming $c_symbol"
+  else
+    echo "check-h0-object: control $c_name: the $c_check check does not" \
+         "behave as it must (want $c_want, status $c_rc); its output:"
+    printf '%s\n' "$c_out" | sed 's/^/  /'
+    "$NM" "$control_dir/$c_name.o" | sed 's/^/  nm: /' || true
+    exit 2
+  fi
+done
+
 status=0
 for profile in "$@"; do
   client="$ROOT/obj/$profile/argon2-h0.o"
@@ -476,13 +649,26 @@ for profile in "$@"; do
     echo "check-h0-object: $profile: argon2-compression.o clean"
   fi
 
+  # Indexing: no function of its own in the release profile (measured in
+  # the others), and no proof residue in any.
+  indexing="$ROOT/obj/$profile/argon2-indexing.o"
+  if [ ! -f "$indexing" ]; then
+    echo "check-h0-object: $profile: missing" \
+         "${indexing#"$ROOT"/} (build first)"
+    exit 2
+  fi
+  rc=0
+  check_indexing "$profile" "$indexing" || rc=$?
+  [ "$rc" -ne 2 ] || exit 2
+  [ "$rc" -eq 0 ] || status=1
+
   # Static ghost code only: the object holds one external symbol, the
-  # package's elaboration flag, and references nothing.
+  # package's elaboration flag, no function, and references nothing.
   # Argon2.Compression_Model also holds the initialisation procedure GNAT
   # generates for its array type Positions (TpositionsBIP): the type is
   # deliberately not ghost, because the implementation uses it, and the
   # procedure has no data and calls nothing.
-  for unit in h0_model h_prime_model compression_model; do
+  for unit in h0_model h_prime_model compression_model indexing_model; do
     object="$ROOT/obj/$profile/argon2-$unit.o"
     if [ ! -f "$object" ]; then
       echo "check-h0-object: $profile: missing ${object#"$ROOT"/} (build first)"
@@ -498,21 +684,8 @@ for profile in "$@"; do
         expected=1
         what="its elaboration flag" ;;
     esac
-    external=$("$NM" -g "$object" | awk 'NF > 0')
-    defined=$(printf '%s\n' "$external" | awk '$(NF - 1) != "U" && NF >= 2')
-    referenced=$(printf '%s\n' "$external" | awk '$(NF - 1) == "U"')
-    if [ -n "$referenced" ] \
-       || [ "$(printf '%s\n' "$defined" | grep -c .)" -ne "$expected" ] \
-       || [ "$(printf '%s\n' "$defined" \
-               | awk '{ print tolower($NF) }' \
-               | grep -cE "$allowed")" -ne "$expected" ]; then
-      echo "check-h0-object: $profile: argon2-$unit.o holds more than" \
-           "$what:"
-      printf '%s\n' "$external" | sed 's/^/  /'
-      status=1
-    else
-      echo "check-h0-object: $profile: argon2-$unit.o holds only $what"
-    fi
+    check_flag_only "$profile" "$object" "$allowed" "$expected" "$what" \
+      || status=1
   done
 done
 exit "$status"

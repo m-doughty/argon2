@@ -1,6 +1,7 @@
 --  H-prime comparisons against the official Argon2 C reference, the
 --  H-prime vector and large-output tests (H_Prime_Tests), the H0 tests
---  (H0_Tests) and the block-compression oracle checks (Compression_Tests).
+--  (H0_Tests), the block-compression oracle checks (Compression_Tests) and
+--  the indexing and geometry tests (Indexing_Tests).
 --
 --  Usage: test_main          the default run
 --         test_main --long   only the long H0 test (2**34 + 36 bytes,
@@ -25,6 +26,7 @@ with Blake2b.Hashing;
 with Compression_Tests;
 with H0_Tests;
 with H_Prime_Tests;
+with Indexing_Tests;
 
 procedure Test_Main is
    use type Interfaces.Unsigned_8;
@@ -256,6 +258,9 @@ begin
    Compression_Tests.Run;
    Passed := Passed + Compression_Tests.Passed;
    Failed := Failed + Compression_Tests.Failed;
+   Indexing_Tests.Run;
+   Passed := Passed + Indexing_Tests.Passed;
+   Failed := Failed + Indexing_Tests.Failed;
    Put_Line (Passed'Image & " passed," & Failed'Image & " failed");
    Ada.Command_Line.Set_Exit_Status
      (if Failed = 0 then Ada.Command_Line.Success

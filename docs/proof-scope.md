@@ -1,11 +1,12 @@
 # Assurance scope
 
-This milestone implements three parts of RFC 9106: the variable-length hash
-H′ (§3.3), the pre-hashing digest H0 (§3.2) and the block compression
-function G (§§3.5, 3.6). It does not implement Argon2's memory filling, lane
-scheduling, or public password-hashing interface. The README states what is
-proven, tested and trusted for H0, H′ and compression; this note gives the
-scope of the H′ proof in more detail.
+This milestone implements four parts of RFC 9106: the variable-length hash
+H′ (§3.3), the pre-hashing digest H0 (§3.2), the block compression
+function G (§§3.5, 3.6) and the indexing (§3.4), which nothing calls yet. It
+does not implement Argon2's memory filling, lane scheduling, or public
+password-hashing interface. The README states what is proven, tested and
+trusted for H0, H′, compression and indexing; this note gives the scope of
+the H′ proof in more detail.
 
 ## H′: supported domain
 
@@ -30,8 +31,8 @@ storage. This bound excludes the caller's input, output and scratch buffers.
 ## H′: proof obligations
 
 GNATprove 16.1.0 proves the H′ and wipe bodies with the crate's configured
-options (whole-crate proof on 17 October 2026: 3398 checks, none unproved or
-justified). There are no `pragma Assume` statements. The source contracts and
+options (whole-crate proof on 22 October 2026: 3,827 checks, none unproved
+or justified). There are no `pragma Assume` statements. The source contracts and
 invariants establish:
 
 - Absence of run-time errors and termination over the supported domain.
@@ -67,15 +68,19 @@ function, not proved. See the README and `TRUST.md` S-4.
 
 ## Indexing
 
-`Argon2.Indexing_Model` is this crate's static ghost transcription of RFC 9106
+`Argon2.Indexing` (`Locate`, the reference block of a position, and
+`Next_Address_Block`, an address block) is proved equal to
+`Argon2.Indexing_Model`, this crate's static ghost transcription of RFC 9106
 §3.4.1 and §3.4.2 (the pseudo-random value, the address blocks, the reference
 lane and index), with `Argon2.Geometry` (§3.2's rounding to m′ blocks, the
 positions that are computed, and which take their value from an address
-block). Proved: the reference is a block of the memory and lies in the
-window of blocks already written; `Shape_Of` meets its postcondition. Not
-proved, and so far not tested in this repository: that the model is the
-RFC's indexing. No indexing code exists yet. See the README and `TRUST.md`
-S-5.
+block). Also proved: the model's reference is a block of the memory and
+lies in the window of blocks already written; `Shape_Of` meets its
+postcondition. That the model is the RFC's indexing is tested against the
+official reference's `index_alpha` and `next_addresses`, not proved; the
+choice of lane is checked against a value the test computes itself until
+the memory fill exists. Nothing calls the indexing code yet. See the README
+and `TRUST.md` S-5.
 
 ## Zeroization boundary
 
@@ -96,7 +101,12 @@ clone, for at least the registers a probe shows `zero_call_used_regs`
 zeroes at each return of the wrapper (within the limits in `TRUST.md` H-1),
 for no helper left out of line, and for no call of `memcpy` or `memmove`
 (the body copies no block through libc). The scrub covers their own body's
-frame, not the frames of helpers the body calls that are not inlined. H′ and
+frame, not the frames of helpers the body calls that are not inlined.
+Indexing's `Locate` and `Next_Address_Block` are `Inline_Always`, so that
+they run in the scrubbed frame of the hardened subprogram that calls them;
+the same script requires that the `release` object of `Argon2.Indexing`
+define no function. Whether they are inlined into their caller's frame is
+checked only once that caller, the memory fill, exists. H′ and
 H₀ likewise take their BLAKE2b state, and H′ its two chain values, as
 scratch parameters, so a future cleanup guard can reach them. BLAKE2b's own
 compression locals stay outside any such guard. From blake2b 0.1.2 its

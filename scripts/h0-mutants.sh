@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Mutation suite for H0 (Argon2.H0 and Argon2.H0_Model) and for block
-# compression (Argon2.Compression and Argon2.Compression_Model): shows
-# that the proof and the tests each catch the mistakes they are supposed
-# to catch, and that the tests catch the mistakes the proof cannot see.
+# Mutation suite for H0 (Argon2.H0 and Argon2.H0_Model), for block
+# compression (Argon2.Compression and Argon2.Compression_Model) and for
+# indexing (Argon2.Indexing, Argon2.Indexing_Model and Argon2.Geometry):
+# shows that the proof and the tests each catch the mistakes they are
+# supposed to catch, and that the tests catch the mistakes the proof
+# cannot see.
 # Adapted from the blake2b crate's scripts/mutants.sh. (The file keeps its
 # first name.)
 #
@@ -10,8 +12,9 @@
 # tests under the same settings, or the run stops: otherwise a broken
 # toolchain or a missing prover would look like a caught mutant. The
 # baseline proves every proved unit (UNITS: H0, compression and H', each
-# model and client, and the indexing model with the geometry) from cold, once with every prover and once with each
-# prover alone, and every check must cost at most STEP_MARGIN steps (5000,
+# model and client, the indexing model with the geometry, and indexing)
+# from cold, once with every prover and once with each prover alone, and
+# every check must cost at most STEP_MARGIN steps (5000,
 # half the units' 10000-step budget in argon2.gpr; not configurable) with
 # its cheapest prover (scripts/spark-proof.py margin), so a check a mutant
 # fails proved in the baseline with at least half its budget to spare; and
@@ -37,7 +40,10 @@
 #     proved by a prover, scripts/spark-proof.py proved, and no unit was
 #     skipped, scripts/check-proof-output.sh). The tests (T) must catch
 #     it. A shared mutant whose proof fails (FAILED) is not the same
-#     mistake in both, or broke something else: an error in the suite.
+#     mistake in both, or broke something else: an error in the suite;
+#   * T alone: a mutant of executable code that no model states, so that
+#     no proof can see it (Data_Independent): no proof is run (n/a), and
+#     the tests must catch it.
 # The proof is judged strictly, from GNATprove's results file
 # (scripts/spark-proof.py judge): caught only when an unproved check lies
 # at one of the places the mutant's entry expects (file, line and rule, in
@@ -51,9 +57,11 @@
 # from the mutated unit's own tests: the harness reports failed tests
 # (" N passed, M failed" with M > 0) and at least one of them is a test of
 # that unit ("FAIL: H0: ..." for an H0 mutant, "FAIL: compression: ..."
-# for a compression mutant) that did not fail through Storage_Error. An
-# exception that escapes the harness, or failures only outside the unit's
-# tests, are an ERROR, not a catch. The classifier has its own check:
+# for a compression mutant, "FAIL: indexing: ..." for a mutant of
+# indexing, its model or the geometry, whose tests are one group) that
+# did not fail through Storage_Error. An exception that escapes the
+# harness, or failures only outside the unit's tests, are an ERROR, not a
+# catch. The classifier has its own check:
 # scripts/h0-mutants.sh --selftest.
 #
 # The H0 mutants:
@@ -114,6 +122,73 @@
 #   * s-fblamka-factor: fBlaMka without its factor 2;
 #   * s-final-xor: G without its final xor with R = X xor Y.
 #
+# The indexing mutants. Implementation-only, in Locate (the code wrong,
+# the model right; P and T). Locate's proof states each step's agreement
+# with the model in a static assertion, so the proof fails at the
+# assertion after the wrong step (J2, the reference lane, the area, zz or
+# the start), not at the postcondition (an assertion that fails is assumed
+# after it):
+#   * i-swap-j1-j2: J1 taken from the high half of W and J2 from the low;
+#   * i-j2-shift-31: J2 taken as (W / 2**31) mod 2**32, a shift by 31;
+#   * i-own-lane-minus-one: in later passes, the own lane's area keeps the
+#     previous block (Q - s + Index for Q - s + Index - 1);
+#   * i-other-lane-index-0: in pass 0, another lane's area keeps its last
+#     block at index 0 (the -1 at index 0 dropped);
+#   * i-slice3-start: in later passes, slice 3's area starting at 3 s
+#     instead of 0 (written as 4 s it would be 0 mod q: equivalent, not a
+#     mutant);
+#   * i-mod-lanes-minus-one: the reference lane J2 mod (p - 1);
+#   * i-lane-not-forced: the own lane forced in pass 0, slice 0 only when
+#     p = 1, where J2 mod p is the own lane anyway: on every position
+#     Locate accepts, the same as never forcing it;
+# in Next_Address_Block (P and T; the proof fails Input_Word's
+# postcondition, that word K of Z_N is the model's, or, for i-one-g, the
+# assertion that Scratch (2) is the model's A_N):
+#   * i-counter-n-minus-1: word 6 of Z_N is N - 1 instead of N;
+#   * i-one-g: one compression instead of two: A_N = G (ZERO, Z_N), the
+#     loop of two Compress calls replaced by one call;
+#   * i-pass-word-zero: word 0 of Z_N (the pass) left 0 (written
+#     Pass * 0, so that the formal stays referenced in the warning-free
+#     build);
+#   * i-lane-slice-swap: words 1 and 2 of Z_N (lane and slice) swapped;
+# in Argon2.Geometry:
+#   * i-shape-round-up: Shape_Of's segment rounded up,
+#     (m + 4 p - 1) / (4 p) (P and T; the proof fails the assertions in
+#     Shape_Of that give its postcondition: s <= 2**30 - 1 and
+#     p * 4 s <= m);
+#   * i-data-independent-slice-2: Argon2id data-independent in pass 0
+#     slice 2 too (T alone: no model states Data_Independent, and no
+#     proof uses what it computes; with it, the geometry and indexing
+#     still prove).
+# Model-only (the model wrong, the code right; P, the check named is the
+# one the proof fails):
+#   * m-a-minus-yy: zz = |W| - y instead of |W| - 1 - y (the assertion in
+#     Relative_Position's body that gives its range postcondition,
+#     zz <= |W| - 1);
+#   * m-own-lane-minus-one: in later passes, the own lane's area keeps the
+#     previous block (the window lemma);
+#   * m-other-lane-index-0: in later passes, another lane's area keeps the
+#     last block of the slice before at index 0 (the window lemma);
+#   * m-pass0-area-plus-i: in pass 0, the own lane's area Slice * s +
+#     Index instead of Slice * s + Index - 1 (the window lemma);
+#   * m-lane-not-forced: the lane forced in pass 0, slice 0 only when
+#     p = 1, as i-lane-not-forced (Lemma_Area's forced-lane clause);
+#   * m-j2-shift-31: J2 as (W / 2**31) mod 2**32 (Locate's proof, at its
+#     assertion that its J2 is the model's, the step toward its
+#     postcondition: the model's own lemmas cannot see it, since every
+#     32-bit J2 stays in the range and the window). Written unmasked,
+#     U32 (W / 2**31), it fails a range check in the model instead;
+#   * m-mod-lanes-minus-one: the reference lane J2 mod (p - 1) (a division
+#     check in Reference_Lane, for p = 1, and Lemma_Lane's assertion).
+# Shared (the same mistake in Argon2.Indexing and Argon2.Indexing_Model,
+# including the code's lemmas; S and T):
+#   * s-swap-j1-j2: J1 and J2 swapped;
+#   * s-counter-n-minus-1: word 6 of Z_N is N - 1;
+#   * s-one-g: A_N = G (ZERO, Z_N), one G: one Compress call, as in
+#     i-one-g, the model's Address_Block and the code's lemma for it
+#     changed to match;
+#   * s-pass-word-zero: word 0 of Z_N left 0.
+#
 # The guard. Every mutant proof runs under a guard that polls the proof's
 # process tree every MUTANT_POLL seconds and kills the whole tree when one
 # process, or the tree in total, exceeds MUTANT_RSS_KB of resident memory,
@@ -152,6 +227,7 @@ UNITS="argon2-h0_model.adb argon2-h0.adb"
 UNITS="$UNITS argon2-compression_model.ads argon2-compression.adb"
 UNITS="$UNITS argon2-h_prime_model.ads argon2-h_prime.adb"
 UNITS="$UNITS argon2-geometry.adb argon2-indexing_model.adb"
+UNITS="$UNITS argon2-indexing.adb"
 
 # name | file | exact text | replacement | unit to prove | must catch |
 #   expected unproved checks (FILE:LINE:RULE, comma-separated, as the
@@ -160,9 +236,10 @@ UNITS="$UNITS argon2-geometry.adb argon2-indexing_model.adb"
 # Entries with the same name are one mutant changing several places; the
 # unit, the layers and the expected checks are those of its first entry,
 # and the tests that give evidence are those of its first entry's file.
-# "Must catch" is P, PT or ST (see the header). A P or PT mutant proves
-# one unit; an ST mutant names every unit that must still prove,
-# separated by spaces, and no expected checks.
+# "Must catch" is P, PT, ST or T (see the header). A P or PT mutant
+# proves one unit; an ST mutant names every unit that must still prove,
+# separated by spaces, and no expected checks; a T mutant names no unit
+# and no expected checks.
 # In the text and its replacement, \n stands for a line break.
 MUTANTS=(
   "field-order|src/argon2-h0.adb|        when 1 => Pr.Tag_Length,\n        when 2 => Pr.Memory,|        when 1 => Pr.Memory,\n        when 2 => Pr.Tag_Length,|argon2-h0.adb|PT|argon2-h0.adb:427:VC_ASSERT"
@@ -206,6 +283,44 @@ MUTANTS=(
   "s-fblamka-factor|src/argon2-compression_model.ads|   is (X + Y + 2 * ((X mod 2**32) * (Y mod 2**32)))|   is (X + Y + ((X mod 2**32) * (Y mod 2**32)))|||"
   "s-final-xor|src/argon2-compression.adb|           xor R (K) xor M (X) (K) xor M (Y) (K);|           xor R (K);|argon2-compression_model.ads argon2-compression.adb|ST|"
   "s-final-xor|src/argon2-compression_model.ads|         Xor_Blocks (Z, R))|         Z)|||"
+  # Indexing: implementation-only mutants of Locate (the code wrong, the
+  # model right; proof and tests must each catch them).
+  "i-swap-j1-j2|src/argon2-indexing.adb|      J1    : constant U32 := U32 (W mod 2**32);\n      J2    : constant U32 := U32 (W / 2**32);|      J1    : constant U32 := U32 (W / 2**32);\n      J2    : constant U32 := U32 (W mod 2**32);|argon2-indexing.adb|PT|argon2-indexing.adb:155:VC_ASSERT,argon2-indexing.adb:189:VC_ASSERT"
+  "i-j2-shift-31|src/argon2-indexing.adb|      J2    : constant U32 := U32 (W / 2**32);|      J2    : constant U32 := U32 ((W / 2**31) mod 2**32);|argon2-indexing.adb|PT|argon2-indexing.adb:155:VC_ASSERT"
+  "i-own-lane-minus-one|src/argon2-indexing.adb|         Area := Q - S.Segment + Index - 1;|         Area := Q - S.Segment + Index;|argon2-indexing.adb|PT|argon2-indexing.adb:183:VC_ASSERT"
+  "i-other-lane-index-0|src/argon2-indexing.adb|            Area := Slice * S.Segment + (if Index = 0 then -1 else 0);|            Area := Slice * S.Segment;|argon2-indexing.adb|PT|argon2-indexing.adb:183:VC_ASSERT"
+  "i-slice3-start|src/argon2-indexing.adb|      if Pass = 0 or else Slice = 3 then\n         Start := 0;|      if Pass = 0 or else Slice = 3 then\n         Start := (if Pass = 0 then 0 else 3 * S.Segment);|argon2-indexing.adb|PT|argon2-indexing.adb:197:VC_ASSERT"
+  "i-mod-lanes-minus-one|src/argon2-indexing.adb|         Ref_Lane := Long_Long_Integer (J2) mod S.Lanes;|         Ref_Lane := Long_Long_Integer (J2) mod (S.Lanes - 1);|argon2-indexing.adb|PT|argon2-indexing.adb:156:VC_DIVISION_CHECK,argon2-indexing.adb:158:VC_ASSERT"
+  "i-lane-not-forced|src/argon2-indexing.adb|      if Pass = 0 and then Slice = 0 then\n         Ref_Lane := Lane;|      if Pass = 0 and then Slice = 0 and then S.Lanes = 1 then\n         Ref_Lane := Lane;|argon2-indexing.adb|PT|argon2-indexing.adb:161:VC_ASSERT"
+  # Indexing: implementation-only mutants of Next_Address_Block.
+  "i-counter-n-minus-1|src/argon2-indexing.adb|         when 6      => Interfaces.Unsigned_64 (N),|         when 6      => Interfaces.Unsigned_64 (N - 1),|argon2-indexing.adb|PT|argon2-indexing.adb:280:VC_POSTCONDITION"
+  "i-one-g|src/argon2-indexing.adb|      for Y in Block_Index range 1 .. 2 loop\n         Compression.Compress (Scratch, 0, Y, 2, Work);\n         Lemma_Same_Block (Scratch (0), Model.Zero_Block);\n         if Y = 1 then\n            Lemma_Same_Block (Scratch (2), A1);\n         end if;\n         pragma Loop_Invariant\n           (Scratch (0)'Initialized and then Scratch (1)'Initialized\n            and then Scratch (2)'Initialized);\n         pragma Loop_Invariant\n           (Static =>\n              Zero_Block_Ok (Scratch (0))\n              and then Same_Block (Scratch (0), Model.Zero_Block)\n              and then\n              (if Y = 1 then Same_Block (Scratch (2), A1)\n               else Scratch (2) = Compression_Model.G (Model.Zero_Block, A1)));\n      end loop;|      Compression.Compress (Scratch, 0, 1, 2, Work);\n      Lemma_Same_Block (Scratch (0), Model.Zero_Block);\n      Lemma_Same_Block (Scratch (2), A1);|argon2-indexing.adb|PT|argon2-indexing.adb:371:VC_ASSERT"
+  "i-pass-word-zero|src/argon2-indexing.adb|         when 0      => Interfaces.Unsigned_64 (Pass),|         when 0      => Interfaces.Unsigned_64 (Pass) * 0,|argon2-indexing.adb|PT|argon2-indexing.adb:280:VC_POSTCONDITION"
+  "i-lane-slice-swap|src/argon2-indexing.adb|         when 1      => Interfaces.Unsigned_64 (Lane),\n         when 2      => Interfaces.Unsigned_64 (Slice),|         when 1      => Interfaces.Unsigned_64 (Slice),\n         when 2      => Interfaces.Unsigned_64 (Lane),|argon2-indexing.adb|PT|argon2-indexing.adb:280:VC_POSTCONDITION"
+  # Indexing: implementation-only mutants of the geometry.
+  "i-shape-round-up|src/argon2-geometry.adb|      Segment : constant Long_Long_Integer := M / (4 * P);|      Segment : constant Long_Long_Integer := (M + 4 * P - 1) / (4 * P);|argon2-geometry.adb|PT|argon2-geometry.adb:16:VC_ASSERT,argon2-geometry.adb:17:VC_ASSERT"
+  "i-data-independent-slice-2|src/argon2-geometry.ads|       or else (V = Argon2id and then Pass = 0 and then Slice < 2));|       or else (V = Argon2id and then Pass = 0 and then Slice <= 2));||T|"
+  # Indexing: model-only mutants (the model wrong, the code right; the
+  # proof must fail the check each names).
+  "m-a-minus-yy|src/argon2-indexing_model.ads|         A - Big_LLI (1) - YY)|         A - YY)|argon2-indexing_model.adb|P|argon2-indexing_model.adb:91:VC_ASSERT"
+  "m-own-lane-minus-one|src/argon2-indexing_model.ads|         (if Same_Lane then 3 * S.Segment + Index - 1|         (if Same_Lane then 3 * S.Segment + Index|argon2-indexing_model.adb|P|argon2-indexing_model.ads:371:VC_POSTCONDITION"
+  "m-other-lane-index-0|src/argon2-indexing_model.ads|          else 3 * S.Segment + (if Index = 0 then -1 else 0)))|          else 3 * S.Segment))|argon2-indexing_model.adb|P|argon2-indexing_model.ads:371:VC_POSTCONDITION"
+  "m-pass0-area-plus-i|src/argon2-indexing_model.ads|          elsif Same_Lane then Slice * S.Segment + Index - 1|          elsif Same_Lane then Slice * S.Segment + Index|argon2-indexing_model.adb|P|argon2-indexing_model.ads:371:VC_POSTCONDITION"
+  "m-lane-not-forced|src/argon2-indexing_model.ads|   is (if Pass = 0 and then Slice = 0 then Lane|   is (if Pass = 0 and then Slice = 0 and then S.Lanes = 1 then Lane|argon2-indexing_model.adb|P|argon2-indexing_model.ads:328:VC_POSTCONDITION"
+  "m-j2-shift-31|src/argon2-indexing_model.ads|   is (U32 (W / 2**32))|   is (U32 ((W / 2**31) mod 2**32))|argon2-indexing.adb|P|argon2-indexing.adb:155:VC_ASSERT"
+  "m-mod-lanes-minus-one|src/argon2-indexing_model.ads|       else Long_Long_Integer (J2 (W)) mod S.Lanes)|       else Long_Long_Integer (J2 (W)) mod (S.Lanes - 1))|argon2-indexing_model.adb|P|argon2-indexing_model.ads:172:VC_DIVISION_CHECK,argon2-indexing_model.adb:117:VC_ASSERT"
+  # Indexing: shared mutants (the same mistake in the code and the static
+  # model; the proof must still succeed, the tests must catch them).
+  "s-swap-j1-j2|src/argon2-indexing.adb|      J1    : constant U32 := U32 (W mod 2**32);\n      J2    : constant U32 := U32 (W / 2**32);|      J1    : constant U32 := U32 (W / 2**32);\n      J2    : constant U32 := U32 (W mod 2**32);|argon2-indexing_model.adb argon2-indexing.adb|ST|"
+  "s-swap-j1-j2|src/argon2-indexing_model.ads|   is (U32 (W mod 2**32))|   is (U32 (W / 2**32))|||"
+  "s-swap-j1-j2|src/argon2-indexing_model.ads|   function J2 (W : U64) return U32\n   is (U32 (W / 2**32))|   function J2 (W : U64) return U32\n   is (U32 (W mod 2**32))|||"
+  "s-counter-n-minus-1|src/argon2-indexing.adb|         when 6      => Interfaces.Unsigned_64 (N),|         when 6      => Interfaces.Unsigned_64 (N - 1),|argon2-indexing_model.adb argon2-indexing.adb|ST|"
+  "s-counter-n-minus-1|src/argon2-indexing_model.ads|         when 6      => U64 (N),|         when 6      => U64 (N - 1),|||"
+  "s-one-g|src/argon2-indexing.adb|      for Y in Block_Index range 1 .. 2 loop\n         Compression.Compress (Scratch, 0, Y, 2, Work);\n         Lemma_Same_Block (Scratch (0), Model.Zero_Block);\n         if Y = 1 then\n            Lemma_Same_Block (Scratch (2), A1);\n         end if;\n         pragma Loop_Invariant\n           (Scratch (0)'Initialized and then Scratch (1)'Initialized\n            and then Scratch (2)'Initialized);\n         pragma Loop_Invariant\n           (Static =>\n              Zero_Block_Ok (Scratch (0))\n              and then Same_Block (Scratch (0), Model.Zero_Block)\n              and then\n              (if Y = 1 then Same_Block (Scratch (2), A1)\n               else Scratch (2) = Compression_Model.G (Model.Zero_Block, A1)));\n      end loop;|      Compression.Compress (Scratch, 0, 1, 2, Work);\n      Lemma_Same_Block (Scratch (0), Model.Zero_Block);\n      Lemma_Same_Block (Scratch (2), A1);|argon2-indexing_model.adb argon2-indexing.adb|ST|"
+  "s-one-g|src/argon2-indexing.adb|             Compression_Model.G\n               (Model.Zero_Block,\n                Compression_Model.G\n                  (Model.Zero_Block,\n                   Model.Address_Input (S, V, Pass, Lane, Slice, N))));|             Compression_Model.G\n               (Model.Zero_Block,\n                Model.Address_Input (S, V, Pass, Lane, Slice, N)));|||"
+  "s-one-g|src/argon2-indexing_model.ads|   is (Compression_Model.G\n         (Zero_Block,\n          Compression_Model.G\n            (Zero_Block, Address_Input (S, V, Pass, Lane, Slice, N))))|   is (Compression_Model.G\n         (Zero_Block, Address_Input (S, V, Pass, Lane, Slice, N)))|||"
+  "s-pass-word-zero|src/argon2-indexing.adb|         when 0      => Interfaces.Unsigned_64 (Pass),|         when 0      => Interfaces.Unsigned_64 (Pass) * 0,|argon2-indexing_model.adb argon2-indexing.adb|ST|"
+  "s-pass-word-zero|src/argon2-indexing_model.ads|         when 0      => U64 (Pass),|         when 0      => U64 (Pass) * 0,|||"
 )
 
 copy_crate () {
@@ -402,6 +517,10 @@ evidence_for () {
       echo H0 ;;
     src/argon2-compression.adb|src/argon2-compression_model.ads)
       echo compression ;;
+    src/argon2-indexing.adb|src/argon2-indexing.ads|\
+    src/argon2-indexing_model.ads|src/argon2-indexing_model.adb|\
+    src/argon2-geometry.adb|src/argon2-geometry.ads)
+      echo indexing ;;
     *) echo "" ;;
   esac
 }
@@ -455,6 +574,22 @@ classifier_selftest () {
     "compression-no-count|compression|1|FAIL: compression: Ada argon2d: published block|ERROR"
     "compression-crash|compression|139||ERROR"
     "compression-many-failures|compression|1|@MANY@|yes"
+    "indexing-pass|indexing|0| 1444 passed, 0 failed|no"
+    "indexing-mismatch|indexing|1|FAIL: indexing: reference index 5, oracle 6: y 1 p 2 s 8 t 3 pass 1 slice 2 lane 0 index 0 J1 0 J2 1\n 1443 passed, 1 failed|yes"
+    "indexing-many|indexing|1|FAIL: indexing: address block: y 1 pass 0 lane 0 slice 0 p 1 s 2 t 3 N 1\nFAIL: indexing: Shape_Of ( 1, 9, 1): segment 3\nFAIL: compression: random 7: equals the oracle\n 1440 passed, 3 failed|yes"
+    "indexing-exception|indexing|1|FAIL: indexing: Locate grid: unexpected exception: raised CONSTRAINT_ERROR : argon2-indexing.adb:156 divide by zero\n 1443 passed, 1 failed|yes"
+    "indexing-storage-error|indexing|1|FAIL: indexing: Locate grid: unexpected exception: raised STORAGE_ERROR : stack overflow\n 1443 passed, 1 failed|ERROR"
+    "compression-for-indexing|indexing|1|FAIL: compression: Ada argon2d: published block\n 1443 passed, 1 failed|ERROR"
+    "h0-for-indexing|indexing|1|FAIL: H0: random case 3: against the C serialisation\n 1443 passed, 1 failed|ERROR"
+    "harness-for-indexing|indexing|1|FAIL: input 1 output 4 input first 0 output first 0\n 1443 passed, 1 failed|ERROR"
+    "indexing-for-compression|compression|1|FAIL: indexing: address block: y 1 pass 0 lane 0 slice 0 p 1 s 2 t 3 N 1\n 1443 passed, 1 failed|ERROR"
+    "indexing-for-h0|H0|1|FAIL: indexing: Data_Independent: Argon2id pass 0 slice 2 is not data-independent\n 1443 passed, 1 failed|ERROR"
+    "indexing-case|indexing|1|FAIL: Indexing: Shape_Of ( 1, 9, 1): segment 3\n 1443 passed, 1 failed|ERROR"
+    "indexing-indented|indexing|1|  FAIL: indexing: Shape_Of ( 1, 9, 1): segment 3\n 1443 passed, 1 failed|ERROR"
+    "indexing-escapes|indexing|1|raised CONSTRAINT_ERROR : indexing_tests.adb:131 divide by zero|ERROR"
+    "indexing-no-count|indexing|1|FAIL: indexing: Shape_Of ( 1, 9, 1): segment 3|ERROR"
+    "indexing-crash|indexing|139||ERROR"
+    "indexing-many-failures|indexing|1|@MANY@|yes"
     "no-evidence||1|FAIL: compression: Ada argon2d: published block\n 1443 passed, 1 failed|ERROR"
   )
   local entry name evidence status text want
@@ -519,22 +654,38 @@ sites_ok=1
 for entry in "${MUTANTS[@]}"; do
   IFS='|' read -r name file search replace unit expect checks <<< "$entry"
   case " ${names[*]} " in *" $name "*) ;; *) continue ;; esac
-  if [ -n "$unit" ]; then
+  if [ -z "$expect" ] && [ -n "$unit$checks" ]; then
+    echo "mutant $name: a further entry names a unit or checks"
+    sites_ok=0
+  fi
+  if [ -n "$expect" ]; then
     case "$expect" in
       P|PT) multiple=0 ;;
       ST) multiple=1 ;;
-      *) echo "mutant $name: layers '$expect' (want P, PT or ST)"
+      T)
+        multiple=0
+        if [ -n "$unit" ]; then
+          echo "mutant $name: a tests-only mutant proves no unit, not '$unit'"
+          sites_ok=0
+        fi
+        ;;
+      *) echo "mutant $name: layers '$expect' (want P, PT, ST or T)"
          sites_ok=0
          multiple=1 ;;
     esac
+    if [ "$expect" != T ] && [ -z "$unit" ]; then
+      echo "mutant $name: no unit to prove"
+      sites_ok=0
+    fi
     if [ "$multiple" -eq 0 ] && [ "$unit" != "${unit%% *}" ]; then
       echo "mutant $name: a proof mutant proves one unit, not '$unit'"
       sites_ok=0
     fi
     case "$expect" in
-      *S*)
+      *S*|T)
         if [ -n "$checks" ]; then
-          echo "mutant $name: a shared mutant expects no unproved check"
+          echo "mutant $name: a shared or tests-only mutant expects no" \
+               "unproved check"
           sites_ok=0
         fi
         ;;
@@ -638,11 +789,13 @@ for name in "${names[@]}"; do
   expect=""
   checks=""
   evidence=""
+  first=1
   for entry in "${MUTANTS[@]}"; do
     IFS='|' read -r ename file search replace eunit eexpect echecks \
       <<< "$entry"
     [ "$ename" = "$name" ] || continue
-    if [ -z "$unit" ]; then
+    if [ "$first" -eq 1 ]; then
+      first=0
       unit=$eunit
       expect=$eexpect
       checks=$echecks
@@ -704,6 +857,10 @@ for name in "${names[@]}"; do
         done
         GUARD_WALL_S=$wall
         GUARD_PEAK_TREE_KB=$peak
+        ;;
+      T)
+        # A tests-only mutant: no proof is run.
+        caught_p=n/a
         ;;
       *)
         guarded_prove "$dir" "$unit" "$LOGS/$name.prove.log" \

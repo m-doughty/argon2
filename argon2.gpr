@@ -62,6 +62,11 @@ project Argon2 is
       --  CVC5 and 8282 with Alt-Ergo, so 10000 still covers every prover.
       for Proof_Switches ("argon2-geometry.adb") use ("--steps=10000");
       for Proof_Switches ("argon2-indexing_model.adb") use ("--steps=10000");
+      --  Indexing: every check proves in at most 682 steps with its
+      --  cheapest prover, so 10000 leaves a margin of 14. Each prover
+      --  alone, the dearest check it proves takes 1468 steps with Z3, 4843
+      --  with CVC5 and 5548 with Alt-Ergo.
+      for Proof_Switches ("argon2-indexing.adb") use ("--steps=10000");
    end Prove;
 
 end Argon2;

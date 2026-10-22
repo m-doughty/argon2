@@ -78,9 +78,9 @@ jobs:
         working-directory: tests
         run: ./bin/test_main --long
       # The release profile drops run-time checks and contracts (see
-      # alire.toml): the same tests run against that build. The three tests
+      # alire.toml): the same tests run against that build. The four tests
       # of precondition rejection skip themselves there, each printing
-      # "note: skipped (contracts off): <test>"; exactly three such lines and
+      # "note: skipped (contracts off): <test>"; exactly four such lines and
       # no failure are required.
       - name: Tests on the release profile
         shell: bash
@@ -93,18 +93,20 @@ jobs:
           printf '%s\n' "$log"
           [ "$status" -eq 0 ] || exit "$status"
           skipped=$(printf '%s\n' "$log" | grep -c '^note: skipped (contracts off): ' || true)
-          if [ "$skipped" -ne 3 ]; then
-            echo "::error::$skipped tests skipped themselves in the release profile (expected 3)"
+          if [ "$skipped" -ne 4 ]; then
+            echo "::error::$skipped tests skipped themselves in the release profile (expected 4)"
             exit 1
           fi
           if ! printf '%s\n' "$log" | tail -n 1 | grep -qE '^ *[0-9]+ passed, *0 failed$'; then
             echo "::error::the release run did not end with \"<n> passed, 0 failed\""
             exit 1
           fi
-      # The compiled H0, H' and compression code holds no trace of the proof
-      # or abort deferral, and compression carries its stack-scrubbing clone
-      # and clears the call-used registers on return (see the script's
-      # header). The script reads the library's objects of both profiles
+      # The compiled H0, H', compression and indexing code holds no trace of
+      # the proof or abort deferral, compression carries its stack-scrubbing
+      # clone and clears the call-used registers on return, and the release
+      # indexing object defines no function of its own (see the script's
+      # header; it first checks itself against planted control objects). The
+      # script reads the library's objects of both profiles
       # (obj/release and obj/validation); this step builds both itself, as
       # the steps above do (after them only the configuration unit and the
       # test driver are recompiled), so it does not depend on their order.

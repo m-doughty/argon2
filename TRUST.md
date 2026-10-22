@@ -7,8 +7,9 @@ every sign-off reads `unsigned`. Entries here are proposals, and an agent
 cannot sign them. The README says what is proven, what is tested and what is
 trusted; this file is the detail behind its "trusted" list.
 
-The crate is an early milestone: H′ (RFC 9106 §3.3), H₀ (RFC 9106 §3.2) and
-block compression (RFC 9106 §§3.5, 3.6). Memory filling and the public
+The crate is an early milestone: H′ (RFC 9106 §3.3), H₀ (RFC 9106 §3.2),
+block compression (RFC 9106 §§3.5, 3.6) and indexing (RFC 9106 §3.4, which
+nothing calls yet). Memory filling and the public
 password-hashing interface do not exist yet, and nothing here covers them.
 Block compression is covered as S-4, N-1 and N-5 say; H-1 says what its
 hardening attributes give and what they do not.
@@ -47,9 +48,9 @@ and the proof-output judge and the register parser have been tightened since,
 none of which has run on CI yet): on
 each of the four platforms the `validation` build (this crate's checks and
 contracts on), the H′, H₀ and compression tests including `--long`, the same
-tests on the `release` build (checks and contracts off; the three tests of
+tests on the `release` build (checks and contracts off; the four tests of
 a precondition check skip themselves there, each printing
-`note: skipped (contracts off): <name>`, and the job requires exactly three
+`note: skipped (contracts off): <name>`, and the job requires exactly four
 such lines), `scripts/check-h0-object.sh`, and
 `scripts/check-exception-stack.sh` (H-2), a gate on normal returns and a
 measurement of exceptions: exit 1 (a harness error, or a blind
@@ -105,10 +106,11 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   the caller, which SPARK callers are proved to meet. A caller that is not
   proved and breaks a precondition (an empty H′ output, an H′ input over
   1,024 bytes, an H₀ digest that is not 64 bytes, compression indices
-  outside the block array, uninitialised or aliased arguments) gets no
-  diagnostic in `release`, and undefined behaviour (for example, writes
-  outside an array). The three tests of a precondition check run only with
-  contracts on and skip themselves in `release`. With contracts off the
+  outside the block array, an indexing position, counter or scratch block
+  outside its procedure's precondition, uninitialised or aliased arguments)
+  gets no diagnostic in `release`, and undefined behaviour (for example,
+  writes outside an array). The four tests of a precondition check run only
+  with contracts on and skip themselves in `release`. With contracts off the
   `Executable` postconditions (the cleanup guarantees) are not run in
   `release` either; their proof is unaffected. In both profiles BLAKE2b is
   compiled in its own `release` profile (Alire's default for a dependency;
@@ -138,7 +140,12 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   justified and no unit skipped (`scripts/check-proof-output.sh`); the first
   CI run (17 October 2026) passed the tests and the cold proof on macOS
   arm64, Linux x86_64 and aarch64, and Windows x86_64, with blake2b 0.1.1
-  from the index. The local runs used a copy beside the crate.
+  from the index. The local runs used a copy beside the crate. On
+  22 October 2026, on macOS arm64, the tree with `Argon2.Indexing` passes
+  719,000 tests in `validation` (718,995 in `release`, the four tests of a
+  precondition check skipped) and a cold whole-crate proof of 3,827 checks
+  with none unproved, none justified and no unit skipped; CI has not run
+  that tree yet.
 - **If false:** a proof could hold for a program the compiler does not
   produce. The tests would be the only remaining evidence.
 - **Scope:** all code. A version bump is a signed change.
@@ -149,9 +156,9 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 - **Why believed:** widely used. The crate's proof (`argon2.gpr`, and CI)
   races all three and is limited in steps, not time (`--timeout=0`). On top of
   that, a local script, `scripts/h0-mutants.sh` (the name is old; it covers
-  the six units of H₀, H′ and compression, models included, and the indexing
-  model with the geometry), shows at its baseline that every check of those
-  units is proved by at least two
+  the six units of H₀, H′ and compression, models included, and the three of
+  indexing: the code, its model and the geometry), shows at its baseline
+  that every check of those units is proved by at least two
   provers each on its own, and that, for each of its conditions, the cheapest
   proof found among the single-prover runs costs no more than half the step
   budget (different conditions of one check may use different provers). Run on
@@ -161,11 +168,22 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   at 1,637. On 20 October 2026 (macOS arm64) the baseline passed again with
   `Argon2.Geometry` and `Argon2.Indexing_Model` added: their costliest
   checks need 1 and 2 steps, and no check of theirs is proved by fewer than
-  two provers. It also shows that twenty-six mutated
-  programs behave as designed: twelve of H₀, and fourteen of compression
+  two provers. On 22 October 2026 (macOS arm64) it passed again with
+  `Argon2.Indexing` added, the other units' figures unchanged: its 134
+  checks are each proved by at least two provers, and the costliest needs
+  682 steps. It also shows that fifty mutated
+  programs behave as designed: twelve of H₀, fourteen of compression
   (ten whose code is wrong and which the proof and the tests both catch, and
   four where code and model are wrong in the same way, which still prove, the
-  blind spot of S-4, and which the tests catch). Earlier runs: 14 and 15
+  blind spot of S-4, and which the tests catch), and twenty-four of indexing
+  (twelve whose code is wrong, caught by the proof and the tests; one in
+  `Data_Independent`, which no model states, so no proof runs and the tests
+  catch it; seven whose model is wrong, caught by the proof; and four where
+  code and model are wrong in the same way, the blind spot of S-5, which
+  still prove and which the tests catch). One indexing code mutant (the
+  own lane not forced in pass 0, slice 0) is caught on the test side only
+  by the test-written lane check (T-4), not by the reference. The full suite of fifty ran on 22 October 2026.
+  Earlier runs: 14 and 15
   October 2026 for H₀, and a baseline on Linux arm64 and x86_64 on 15 October.
   Two H₀ mutants are written in a particular form because Z3 runs on in the
   other (see the script's header). The mutants were run on macOS arm64 only. That script is **not** run by CI;
@@ -173,9 +191,9 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   also carry a wall-clock timeout (default 300 s) besides the steps, unlike
   the crate's own proof, which has none; and its logs are kept outside the repository (they are gitignored),
   so the repository itself retains no record of the result. Both gates
-  cover the eight units the script lists (`UNITS`): `Argon2.H0`,
+  cover the nine units the script lists (`UNITS`): `Argon2.H0`,
   `Argon2.H_Prime` and `Argon2.Compression`, their three models,
-  `Argon2.Geometry` and `Argon2.Indexing_Model`.
+  `Argon2.Geometry`, `Argon2.Indexing_Model` and `Argon2.Indexing`.
   `Argon2.Wipe` (the wipe procedure's body), `Argon2` and `Argon2.Blocks`
   are proved in the whole-crate run but held to neither gate; the checks at
   the wipe's calls from H₀ and H′ belong to those units, and those are
@@ -192,7 +210,9 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   agrees with mathematical integers. The H₀ statement counts absorbed bytes
   (up to 2³⁴ + 36) with blake2b's ghost big-integer counter. The indexing model (S-5) also
   multiplies and divides big integers: J₁², area·x and the divisions by
-  2³², through blake2b's ghost conversions.
+  2³², through blake2b's ghost conversions; `Argon2.Indexing`'s ghost code
+  states each step of `Locate`'s arithmetic in those terms, so its proof of
+  equality with the model rests on this too.
 - **Why believed:** it is the standard library's own SPARK model. The H₀
   mutation suite includes a mutant (`len-p-omitted`) that fails the
   precondition of the call to `Absorb_Input`, whose conjuncts include the
@@ -202,8 +222,11 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   numbers.
 - **Scope:** ghost code only. `scripts/check-h0-object.sh` scans the symbols of
   `argon2-h0.o` and `argon2-h_prime.o` (release and validation) for
-  big-integer symbols and finds none; for `argon2-h0_model.o` it checks only
-  that the object's one external symbol is its elaboration flag and that it
+  big-integer symbols and finds none, and does the same for
+  `argon2-indexing.o` (including blake2b's ghost conversions,
+  `Blake2b.Hashing.Big`); for `argon2-h0_model.o` and
+  `argon2-indexing_model.o` it checks only that the object's one external
+  symbol is its elaboration flag, that it defines no function, and that it
   references nothing.
 
 ### T-4 Test-only trust
@@ -211,10 +234,12 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   whether the specification claims (S-1, S-3, S-4, S-5) are believed, not whether the
   proofs hold; production proof takes no result or contract from it.
 - **What there is:**
-  - five `Import`ed C functions in the tests (`compress_oracle` in
+  - seven `Import`ed C functions in the tests (`compress_oracle` in
     `tests/src/compression_tests.adb`; `h0_oracle`, `h0_oracle_generated` and
     `blake2b_512` in `tests/src/h0_tests.adb`; `blake2b_long` in
-    `tests/src/test_main.adb`), compiled at `-O3` by `tests/argon2_tests.gpr`;
+    `tests/src/test_main.adb`; `index_alpha_oracle` and
+    `next_addresses_oracle` in `tests/src/indexing_tests.adb`), compiled at
+    `-O3` by `tests/argon2_tests.gpr`;
   - the vendored official Argon2 reference files (`ref.c`, `core.c`, `core.h`,
     `thread.h`, `blake2/blamka-round-ref.h`, the BLAKE2b files), unmodified and
     pinned to an upstream commit (`tests/ref/README.md`); `core.c` is compiled
@@ -222,7 +247,14 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
     gone;
   - for compression, `tests/ref/compress_oracle.c`, a test-only file that
     `#include`s `ref.c` (which is never compiled alone) and exports one wrapper
-    around the reference's static `fill_block`: the oracle for both forms of G;
+    around the reference's static `fill_block`: the oracle for both forms of G.
+    For indexing it exports two more: one that builds the reference's
+    instance and position on the stack (the fields `index_alpha` reads, the
+    rest as the reference sets them) and calls the reference's own
+    `index_alpha`, and one that calls the reference's static
+    `next_addresses` on an input block whose first seven words the test
+    passes and whose other words, like the zero block, are zero, as
+    `fill_segment` initialises them;
   - for compression, 15 blocks taken from the reference's own known-answer
     files (`tests/ref/kat-blocks.json`, `tests/src/compression_vectors.ads`,
     produced and re-checked by `scripts/compression-vectors.py`, which the CI
@@ -258,9 +290,19 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
     nineteen expected digests in `tests/src/h0_vectors.ads` (the CI `gates`
     job checks they are current), and the three RFC 9106 §5 digests, typed
     in by hand in `tests/src/h0_tests.adb`;
-  - for indexing (S-5), no test in this repository yet: the replay that S-5
-    rests on ran outside it, against the vendored `core.c` and `ref.c`
-    (compiled with `-DARGON2_NO_THREADS`), and against the reference's published memory dumps;
+  - for indexing (S-5), `tests/src/indexing_tests.adb`: `Locate` against
+    the reference's own `index_alpha` and `Next_Address_Block` against its
+    own `next_addresses`, through the two wrappers above. The seven input
+    words of each address block (m′ and y among them) are typed in by hand
+    in the test, not computed by `Shape_Of`. The reference lane is checked
+    against a value the test computes itself (the own lane in pass 0,
+    slice 0, else J₂ mod p), a test-written oracle: the reference chooses
+    the lane inside `fill_segment`, which no test calls, so until the fill
+    exists the lane rests on that check and the proof. The test also tells
+    `index_alpha` whether that lane is the own one. The replay that S-5
+    first rested on ran outside this repository, against the vendored
+    `core.c` and `ref.c` (compiled with `-DARGON2_NO_THREADS`), and against
+    the reference's published memory dumps;
 - **If false:** a wrong expectation could hide a defect, or hide that the
   model is not the RFC's.
 - **Scope:** all tests. This crate's own rules ask for signed test-only entries
@@ -417,22 +459,37 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   least 2 and m′ = 4p·⌊m / 4p⌋ blocks. For every computed position and every
   64-bit W, the model's reference is a block of the memory and lies in the
   window of blocks already written, never the block being made or the one
-  before it (the README states the window). No code is proved equal to the
-  model yet.
-- **Why believed (tested, not proved):** a transcription of the same rules,
-  replayed over the official reference's published memory dumps (all
-  blocks of every pass, the three variants) and against the reference's own
-  memory fill at segment lengths it cannot reach (up to 1,024, one to five
-  lanes); this replay is not in this repository. The model was also read
-  against the reference's `index_alpha` and `next_addresses`. The tests of
-  the indexing code will call those two functions directly; the reference
-  will check the choice of lane only through a whole-memory comparison,
-  once the fill exists.
+  before it (the README states the window). `Argon2.Indexing` is proved
+  equal to the model: for every computed position and every W, `Locate`
+  returns the model's reference lane and index (the code takes J₁² and
+  |W|·x in 128-bit signed subtypes bounded so that neither overflows; the
+  model, in big integers); and `Next_Address_Block` leaves the model's
+  address block in `Scratch (2)` and the zero block in `Scratch (0)`, with
+  all three scratch blocks initialised. These postconditions are `Static`:
+  proved, never compiled or run. The code was proved equal to the model,
+  not to the RFC: a mistake in the model would still prove.
+- **Why believed (tested, not proved):** the reference's own functions, as
+  oracles (T-4): `Locate` against `index_alpha` on 338,310 cases of
+  position and W, and 18,375 more at the two extreme shapes, and
+  `Next_Address_Block` against `next_addresses` on 618 address blocks,
+  N = 2²³ included; and twenty-four indexing mutants (T-2), including the
+  four the proof cannot see because code and model share the mistake,
+  which the tests catch. The choice of lane is not checked against the
+  reference: the reference makes it inside `fill_segment`, so the tests
+  check it against a test-written oracle (J₂ mod p, or the own lane in
+  pass 0, slice 0); the reference checks it only through a whole-memory
+  comparison and its published memory dumps, once the fill exists. Before
+  the code, a transcription of the same rules was replayed over the
+  official reference's published memory dumps (all blocks of every pass,
+  the three variants) and against the reference's own memory fill at
+  segment lengths it cannot reach (up to 1,024, one to five lanes); this
+  replay is not in this repository. These runs are local and not yet in
+  CI.
 - **If false:** the indexing code would be proved equal to the wrong rule,
   and only the tests would show it; the window would still be proved, so
   the fill would still read only written blocks.
-- **Scope:** `Argon2.Indexing_Model`, `Argon2.Geometry`. Not the memory
-  fill, the order of the loops or the final tag.
+- **Scope:** `Argon2.Indexing`, `Argon2.Indexing_Model`, `Argon2.Geometry`.
+  Not the memory fill, the order of the loops or the final tag.
 
 ### H-1 Wiping, registers and stack
 - **Proposition:** on normal return, `Argon2.H0.Compute` and
@@ -512,7 +569,8 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   the secondary stack (which H′'s length-encoding function uses; it holds the
   output length, not a secret) nor for `Argon2.H0_Model`, and checks that
   the external symbols (`nm -g`) of `argon2-h0_model.o` and
-  `argon2-h_prime_model.o` are only their elaboration flag. That is a check on static ghost code having left nothing
+  `argon2-h_prime_model.o` are only their elaboration flag, and that they
+  define no function. That is a check on static ghost code having left nothing
   behind (see N-2), not on wiping, and it looks at symbol names, not at the
   code. For `argon2-h0.o`, `argon2-h_prime.o` and `argon2-compression.o`, in
   both the `release` and the `validation` objects, it also reads the code,
@@ -555,8 +613,22 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   the same names as `argon2-h0.o` (soft-links, abort deferral, the secondary
   stack, big integers, models, theory), and checks that `argon2-compression_model.o`
   holds only its elaboration flag and the initialisation procedure of the type
-  `Positions` (N-5). It does not check how much stack is scrubbed, nor what
-  the run-time leaves, nor `Work`.
+  `Positions` (N-5). For indexing, whose `Locate` and `Next_Address_Block`
+  are `Inline_Always` so that they run in the scrubbed frame of the
+  hardened subprogram that calls them, it requires that the `release`
+  object `argon2-indexing.o` define no function (in `validation` it lists
+  the functions, without checking them), that neither profile's object name
+  the same residue as compression's, the indexing model, blake2b's ghost
+  conversions or the unit's own ghost subprograms, and that
+  `argon2-indexing_model.o` hold only its elaboration flag; before reading
+  the crate's objects it checks its own symbol reading against control
+  objects compiled by the same `gcc`, with a planted function or
+  big-integer reference that must fail. On macOS arm64 (22 October 2026)
+  neither profile's `argon2-indexing.o` defines a function. Nothing calls
+  the two procedures yet, so whether they are inlined into a scrubbed frame
+  is not checked; that check comes with their caller, the fill. It does
+  not check how much stack is scrubbed, nor what the run-time leaves, nor
+  `Work`.
 - **If false:** key- or password-derived bytes could remain in memory the
   library no longer controls.
 - **Scope:** macOS arm64, Linux arm64 and Linux x86_64 so far (the object check
@@ -808,15 +880,22 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   reopen `Prefix_Done` where a proof needs it. The existing `Hide_Info` on
   `Message`, `V` and `Tail` in `Argon2.H_Prime_Model` is the same kind. The
   H′ and compression units were restructured on 17 October 2026 so that every
-  check is proved by two provers each on its own (T-2).
+  check is proved by two provers each on its own (T-2). In `Argon2.Indexing`
+  (`src/argon2-indexing.adb`), `Logical_Equal` on its own `Same_Block` (a
+  static ghost function distinct from compression's) is checked and proved
+  in the same way, and a null-body lemma converts array equality into it;
+  and `Hide_Info` on `Argon2.Compression_Model.G`, local to
+  `Next_Address_Block`, only stops the provers unfolding G there (the proof
+  composes `Compress`'s postconditions and never needs G's body). Proof
+  engineering, not assumptions.
 - **N-2 Static ghost code:** every declaration in `Argon2.H0_Model` is
   `Ghost => Static`, so nothing of it is compiled in any profile. In
   `Argon2.H0`, the static loop invariants of `Absorb_Input` and `Compute` are
   a single call to a static ghost function (`In_Progress`); written inline they
   left abort-deferral calls in the release object. `Copy_Chunk`'s static
   invariant is an inline quantified expression over the arrays and leaves no
-  such calls (checked by `scripts/check-h0-object.sh`). H′'s and
-  compression's objects are checked by the same script.
+  such calls (checked by `scripts/check-h0-object.sh`). H′'s,
+  compression's and indexing's objects are checked by the same script.
 - **N-4 A warning annotation outside the W rows:** `pragma Unreferenced (Off,
   Src, From)` in `Argon2.H0_Model` (`src/argon2-h0_model.adb`, the body of
   a ghost procedure) silences unused-parameter diagnostics, because those
@@ -826,15 +905,18 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   `Compress_Xor` state their result in a `Static` postcondition
   (`src/argon2-compression.ads`, with `pragma Assertion_Level (Executable)`
   naming the other level), and `Hash` does the same for H′
-  (`src/argon2-h_prime.ads`). GNATprove proves them; no build compiles or runs
-  them, and `Compression_Model` and `H_Prime_Model` are static ghost code, so
-  nothing of either model is in any object, except, from `Compression_Model`,
+  (`src/argon2-h_prime.ads`), and `Locate` and `Next_Address_Block` for
+  indexing (`src/argon2-indexing.ads`). GNATprove proves them; no build
+  compiles or runs them, and `Compression_Model`, `H_Prime_Model` and
+  `Indexing_Model` are static ghost code, so nothing of these models is in
+  any object, except, from `Compression_Model`,
   the type `Positions` (not ghost, because the implementation uses it): its
   object holds the elaboration flag and the initialisation procedure GNAT
   generates for that type, which returns at once, and nothing else (checked by
-  `scripts/check-h0-object.sh`). The result of compression and of H′
-  is therefore checked at run time only by the tests against the reference
-  oracle (and, for H′, CPython). This uses GNAT 16.1.0's assertion
+  `scripts/check-h0-object.sh`). The result of compression, of H′ and of
+  indexing is therefore checked at run time only by the tests against the
+  reference oracle (and, for H′, CPython; for indexing's lane, the
+  test-written check of T-4). This uses GNAT 16.1.0's assertion
   levels (T-1).
 - **N-3 Follow-ups before signature:**
   - the separate test-only register this crate's rules ask for, and the
