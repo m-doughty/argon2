@@ -76,7 +76,7 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
 | T-2 | Toolchain | the provers and Why3 | unsigned |
 | T-3 | Proof model | GNAT runtime big-integer library | unsigned |
 | T-4 | Test-only trust | the C oracles and `Import`ed C in `tests/` | unsigned |
-| D-1 | Third-party SPARK | `blake2b` 0.1.2, pinned to one commit until it is in the Alire index | unsigned |
+| D-1 | Third-party SPARK | `blake2b` 0.1.2, exactly that version, from the Alire index | unsigned |
 | S-1 | Specification | `Argon2.H0_Model` is the RFC 9106 §3.2 message | unsigned |
 | S-2 | Specification | `Blake2b.Spec` is RFC 7693, and `Logical_Hash` is BLAKE2b beyond 2³¹ bytes | unsigned |
 | S-3 | Specification | `Argon2.H_Prime_Model` is RFC 9106 §3.3 | unsigned |
@@ -320,14 +320,13 @@ check's disassembly parser, on GNU and LLVM output for x86-64 and AArch64). It d
   19 October 2026, on macOS arm64, this crate's cold proof also analyzed those
   units of 0.1.2 (the GNATprove run on this project covers the dependency's
   sources) and proved them (3432 checks in all, none unproved; on 14 October
-  it did the same for 0.1.1). `alire.toml` asks for exactly blake2b 0.1.2.
-  That release is not in the Alire index yet, so the manifest pins it to
-  its release commit `fec91ab72758a7c5d1d06450f78615c793352440` (tag
-  `0.1.2`) of `https://github.com/m-doughty/blake2b`; the proof above ran
-  on the commit before it, whose sources are the same;
-  `scripts/check-dependency.sh` checks that (exactly that version, that pin
-  and no other); the CI `gates` job runs it. The pin goes when 0.1.2 is in
-  the index.
+  it did the same for 0.1.1). `alire.toml` asks for exactly blake2b 0.1.2,
+  from the Alire index, whose release is the commit
+  `fec91ab72758a7c5d1d06450f78615c793352440` (tag `0.1.2`) of
+  `https://github.com/m-doughty/blake2b`; the proof above ran on the commit
+  before it, whose sources are the same. `scripts/check-dependency.sh`
+  checks that (exactly that version, and no pin of any crate); the CI
+  `gates` job runs it.
 - **If false:** every H₀ and H′ claim that names `Blake2b` is about a function
   that is not BLAKE2b.
 - **Scope:** H₀ and H′. Proof visibility (blake2b's N-2) matters to both,

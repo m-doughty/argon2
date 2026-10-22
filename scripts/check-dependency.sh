@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# The BLAKE2b dependency is exactly version 0.1.2, pinned to one commit of
-# its repository until that release is in the Alire index: no other
-# version range, no other pin (a local path or another commit would stand
-# in for the release), and no pin of any other crate.
+# The BLAKE2b dependency is exactly version 0.1.2, from the Alire index: no
+# other version range, and no pin of any crate (a local path or a commit
+# would stand in for the release).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,9 +9,6 @@ python3 - "$root/alire.toml" <<'PYTHON'
 import pathlib
 import sys
 import tomllib
-
-URL = "https://github.com/m-doughty/blake2b"
-COMMIT = "fec91ab72758a7c5d1d06450f78615c793352440"
 
 
 def collect(node):
@@ -40,10 +36,7 @@ direct = [dep["blake2b"] for dep in depends if "blake2b" in dep]
 if direct != ["=0.1.2"] or collect(depends) != direct:
     raise SystemExit("BLAKE2b dependency must be exactly version 0.1.2, "
                      "once, unconditionally")
-pins = manifest.get("pins", [])
-expected = {"blake2b": {"url": URL, "commit": COMMIT}}
-if pins != [expected]:
-    raise SystemExit("The library manifest must pin blake2b to "
-                     f"{URL} at commit {COMMIT}, and pin nothing else")
-print(f"BLAKE2b dependency is 0.1.2, pinned to commit {COMMIT}")
+if "pins" in manifest:
+    raise SystemExit("The library manifest must pin nothing")
+print("BLAKE2b dependency is 0.1.2, from the index, and nothing is pinned")
 PYTHON

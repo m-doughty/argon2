@@ -8,9 +8,8 @@ position, and the address blocks), which nothing calls yet. This is an early
 milestone; it does not yet implement password hashing or memory filling, and
 the Argon2d, Argon2i and Argon2id variants are not yet offered.
 
-The BLAKE2b dependency is blake2b 0.1.2, exactly that version. Until 0.1.2
-is in the Alire index, `alire.toml` pins it to one commit of its
-repository, which Alire fetches. Builds need no neighbouring checkout.
+The BLAKE2b dependency is blake2b 0.1.2, exactly that version, from the
+Alire index. Builds need no neighbouring checkout.
 
 ## API
 

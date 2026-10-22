@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: BLAKE2b is 0.1.2, pinned to one commit until it is in the index
+      - name: BLAKE2b is exactly 0.1.2, from the index, and nothing is pinned
         run: bash scripts/check-dependency.sh
       - name: Source gate self-test
         run: bash scripts/check-sources.sh --self-test

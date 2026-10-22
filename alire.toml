@@ -13,11 +13,6 @@ tags = ["spark", "argon2", "argon2id", "hash", "crypto", "proof"]
 blake2b = "=0.1.2"
 gnat = ">=16"
 
-# blake2b 0.1.2 (its release commit, tag 0.1.2) is not yet in the Alire
-# index: this pin stands until it is.
-[[pins]]
-blake2b = { url = "https://github.com/m-doughty/blake2b", commit = "fec91ab72758a7c5d1d06450f78615c793352440" }
-
 [build-switches]
 "*".ada_version = "Ada2022"
 # Release builds drop run-time checks and contracts. The proof covers the
